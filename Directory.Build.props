@@ -1,0 +1,11 @@
+<Project>
+
+  <PropertyGroup>
+    <Authors>Yuji Kanda</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>
