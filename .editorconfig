@@ -1,0 +1,41 @@
+[*.cs]
+# CSharp_IngeniousAnalyzer Rules
+
+# --- Null Rules (Enforce type-safe null checks) ---
+dotnet_diagnostic.NULL001.severity = warning
+
+# --- String Rules (Empty check, nameof, redundant ToString optimization) ---
+dotnet_diagnostic.STR001.severity = warning
+dotnet_diagnostic.STR002.severity = warning
+dotnet_diagnostic.STR003.severity = warning
+
+# --- Linq Rules (Avoid unnecessary ToList/ToArray, optimize performance) ---
+dotnet_diagnostic.LINQ001.severity = warning
+dotnet_diagnostic.LINQ002.severity = warning
+
+# --- Collection Rules (List capacity, initialization, etc.) ---
+dotnet_diagnostic.COLL001.severity = warning
+
+# --- Comment Rules (Function header enforcement) ---
+dotnet_diagnostic.COMM001.severity = warning
+dotnet_diagnostic.COMM002.severity = warning
+
+# --- Complexity Rules (Method complexity, method length) ---
+dotnet_diagnostic.CPX001.severity = warning
+dotnet_diagnostic.CPX002.severity = warning
+
+# --- Compare Rules (Inequality operator direction) ---
+dotnet_diagnostic.COMP001.severity = warning
+
+# --- Exception Rules (Empty catch block, rethrow losing stack trace) ---
+dotnet_diagnostic.EXC001.severity = warning
+dotnet_diagnostic.EXC002.severity = warning
+
+# --- Async Rules (ConfigureAwait(false) to avoid deadlocks) ---
+dotnet_diagnostic.ASYNC001.severity = warning
+
+# --- Unicode Rules (Invisible Unicode characters such as NBSP / zero-width / bidi controls) ---
+dotnet_diagnostic.UNI001.severity = warning
+
+# IDE0130: Namespace がフォルダー構造と一致しません
+dotnet_diagnostic.IDE0130.severity = error
