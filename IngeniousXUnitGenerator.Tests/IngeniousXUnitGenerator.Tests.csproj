@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IngeniousXUnitGenerator.Core\IngeniousXUnitGenerator.Core.csproj" />
+    <ProjectReference Include="..\IngeniousXUnitGenerator.Analyzers\IngeniousXUnitGenerator.Analyzers.csproj" />
   </ItemGroup>
 
 </Project>
