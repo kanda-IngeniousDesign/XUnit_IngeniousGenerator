@@ -32,7 +32,8 @@ public class GenerateTestClassRefactoringTests
         Assert.Equal(Path.Combine("/src", "Product.Tests", "Domain", "CalculatorTests.cs"), added.FilePath);
 
         var text = (await added.GetTextAsync()).ToString();
-        Assert.Contains("namespace Product.Domain;", text);
+        Assert.Contains("using Product.Domain;", text);
+        Assert.Contains("namespace Product.Tests.Domain;", text);
         Assert.Contains("public class CalculatorTests", text);
     }
 
@@ -121,7 +122,8 @@ public class GenerateTestClassRefactoringTests
             ProjectId.CreateNewId(), VersionStamp.Create(), name, name, LanguageNames.CSharp,
             filePath: Path.Combine("/src", name, name + ".csproj"),
             metadataReferences: references,
-            projectReferences: referencedProject is null ? [] : [new ProjectReference(referencedProject)]);
+            projectReferences: referencedProject is null ? [] : [new ProjectReference(referencedProject)])
+            .WithDefaultNamespace(name);
         return workspace.AddProject(info);
     }
 

@@ -60,17 +60,28 @@ public class GenerateTestClassRefactoring : CodeRefactoringProvider
         var testProject = solution.GetProject(testProjectId);
         if (testProject is null) return Task.FromResult(solution);
 
-        var result = TestClassGenerator.Generate(targetType);
-        var fileName = result.TestClassName + ".cs";
-
         // 対象と同じフォルダ構成に置き、既に同名ファイルがあれば人間の編集を壊さないよう何もしない（マージは後続で実装）
         var folders = document.Folders;
+        var result = TestClassGenerator.Generate(targetType, BuildTestNamespace(testProject, folders));
+        var fileName = result.TestClassName + ".cs";
         if (testProject.Documents.Any(d => d.Name == fileName && d.Folders.SequenceEqual(folders))) return Task.FromResult(solution);
 
         var filePath = BuildFilePath(testProject, folders, fileName);
         var newSolution = solution.AddDocument(
             DocumentId.CreateNewId(testProjectId), fileName, SourceText.From(result.Code), folders, filePath);
         return Task.FromResult(newSolution);
+    }
+
+    /// <summary>
+    /// テストプロジェクトの既定の名前空間にフォルダ階層をつなげ、IDE0130（名前空間とフォルダの一致）に沿った名前空間を作る
+    /// </summary>
+    /// <param name="testProject">追加先のテストプロジェクト</param>
+    /// <param name="folders">プロジェクト内のフォルダ階層</param>
+    /// <returns>テストクラスを置く名前空間</returns>
+    private static string BuildTestNamespace(Project testProject, IReadOnlyList<string> folders)
+    {
+        var rootNamespace = testProject.DefaultNamespace ?? testProject.AssemblyName;
+        return string.Join(".", new[] { rootNamespace }.Concat(folders).Where(s => s.Length > 0));
     }
 
     /// <summary>

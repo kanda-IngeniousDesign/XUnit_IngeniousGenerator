@@ -11,13 +11,15 @@ namespace IngeniousXUnitGenerator.Core;
 public static class TestClassGenerator
 {
     private const string TestClassSuffix = "Tests";
+    private const string XUnitNamespace = "Xunit";
 
     /// <summary>
     /// 対象クラスに対応するテストファイル1つ分のコードを生成する
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
+    /// <param name="testNamespace">テストクラスを置く名前空間（nullや空ならグローバル名前空間）</param>
     /// <returns>生成結果</returns>
-    public static GenerationResult Generate(INamedTypeSymbol targetType)
+    public static GenerationResult Generate(INamedTypeSymbol targetType, string? testNamespace)
     {
         var testClassName = targetType.Name + TestClassSuffix;
 
@@ -26,25 +28,50 @@ public static class TestClassGenerator
             .AddModifiers(Token(SyntaxKind.PublicKeyword));
 
         var compilationUnit = CompilationUnit()
-            .AddUsings(UsingDirective(ParseName("Xunit")))
-            .AddMembers(WrapInNamespace(targetType, testClass))
-            .NormalizeWhitespace();
+            .AddUsings(BuildUsings(targetType, testNamespace))
+            .AddMembers(WrapInNamespace(testNamespace, testClass))
+            .NormalizeWhitespace()
+            .WithTrailingTrivia(CarriageReturnLineFeed);
 
         return new GenerationResult(testClassName, compilationUnit.ToFullString());
     }
 
     /// <summary>
-    /// 対象クラスと同じ名前空間でテストクラスを包む（グローバル名前空間ならそのまま返す）
+    /// xUnitと、テスト対象の名前空間（テスト側から見えない場合のみ）のusingを作る
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
+    /// <param name="testNamespace">テストクラスを置く名前空間</param>
+    /// <returns>名前順に並べたusingディレクティブ</returns>
+    private static UsingDirectiveSyntax[] BuildUsings(INamedTypeSymbol targetType, string? testNamespace)
+    {
+        var namespaces = new List<string>(2) { XUnitNamespace };
+
+        // テスト側の名前空間と同じか、その親の名前空間であれば、usingなしで参照できる
+        var targetNamespace = targetType.ContainingNamespace;
+        if (targetNamespace is not null && !targetNamespace.IsGlobalNamespace)
+        {
+            var target = targetNamespace.ToDisplayString();
+            var test = testNamespace ?? string.Empty;
+            if (test != target && !test.StartsWith(target + ".", StringComparison.Ordinal)) namespaces.Add(target);
+        }
+
+        return namespaces
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .Select(n => UsingDirective(ParseName(n)))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// 指定の名前空間でテストクラスを包む（名前空間が空ならそのまま返す）
+    /// </summary>
+    /// <param name="testNamespace">テストクラスを置く名前空間</param>
     /// <param name="testClass">テストクラスの宣言</param>
     /// <returns>名前空間で包んだメンバー</returns>
-    private static MemberDeclarationSyntax WrapInNamespace(INamedTypeSymbol targetType, ClassDeclarationSyntax testClass)
+    private static MemberDeclarationSyntax WrapInNamespace(string? testNamespace, ClassDeclarationSyntax testClass)
     {
-        var ns = targetType.ContainingNamespace;
-        if (ns is null || ns.IsGlobalNamespace) return testClass;
+        if (string.IsNullOrEmpty(testNamespace)) return testClass;
 
-        return FileScopedNamespaceDeclaration(ParseName(ns.ToDisplayString()))
+        return FileScopedNamespaceDeclaration(ParseName(testNamespace!))
             .AddMembers(testClass);
     }
 }
