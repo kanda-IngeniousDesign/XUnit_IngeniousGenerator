@@ -39,7 +39,7 @@ public class GenerateTestClassRefactoring : CodeRefactoringProvider
             context.RegisterRefactoring(
                 CodeAction.Create(
                     title: $"このクラスのテストコードを生成（{testProject.Name}）",
-                    createChangedSolution: c => AddTestDocumentAsync(document, targetType, testProjectId, c),
+                    createChangedSolution: c => AddTestDocumentAsync(document, targetType, semanticModel.Compilation, testProjectId, c),
                     equivalenceKey: $"GenerateTestClass:{testProject.Name}"));
         }
     }
@@ -49,11 +49,12 @@ public class GenerateTestClassRefactoring : CodeRefactoringProvider
     /// </summary>
     /// <param name="document">対象クラスがあるドキュメント</param>
     /// <param name="targetType">テスト対象のクラス</param>
+    /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="testProjectId">追加先のテストプロジェクト</param>
     /// <param name="cancellationToken">キャンセルトークン</param>
     /// <returns>変更後のソリューション</returns>
     private static Task<Solution> AddTestDocumentAsync(
-        Document document, INamedTypeSymbol targetType, ProjectId testProjectId, CancellationToken cancellationToken)
+        Document document, INamedTypeSymbol targetType, Compilation compilation, ProjectId testProjectId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var solution = document.Project.Solution;
@@ -62,7 +63,7 @@ public class GenerateTestClassRefactoring : CodeRefactoringProvider
 
         // 対象と同じフォルダ構成に置き、既に同名ファイルがあれば人間の編集を壊さないよう何もしない（マージは後続で実装）
         var folders = document.Folders;
-        var result = TestClassGenerator.Generate(targetType, BuildTestNamespace(testProject, folders));
+        var result = TestClassGenerator.Generate(targetType, compilation, BuildTestNamespace(testProject, folders));
         var fileName = result.TestClassName + ".cs";
         if (testProject.Documents.Any(d => d.Name == fileName && d.Folders.SequenceEqual(folders))) return Task.FromResult(solution);
 
@@ -81,7 +82,7 @@ public class GenerateTestClassRefactoring : CodeRefactoringProvider
     private static string BuildTestNamespace(Project testProject, IReadOnlyList<string> folders)
     {
         var rootNamespace = testProject.DefaultNamespace ?? testProject.AssemblyName;
-        return string.Join(".", new[] { rootNamespace }.Concat(folders).Where(s => s.Length > 0));
+        return string.Join(".", new[] { rootNamespace }.Concat(folders).Where(s => 0 < s.Length));
     }
 
     /// <summary>

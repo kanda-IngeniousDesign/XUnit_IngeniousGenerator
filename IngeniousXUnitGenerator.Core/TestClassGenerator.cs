@@ -1,3 +1,5 @@
+using IngeniousXUnitGenerator.Core.Generation;
+using IngeniousXUnitGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -12,51 +14,108 @@ public static class TestClassGenerator
 {
     private const string TestClassSuffix = "Tests";
     private const string XUnitNamespace = "Xunit";
+    private const string ManualPrefix = "// 要手動: ";
+    private const string Indent = "    ";
 
     /// <summary>
     /// 対象クラスに対応するテストファイル1つ分のコードを生成する
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
+    /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="testNamespace">テストクラスを置く名前空間（nullや空ならグローバル名前空間）</param>
     /// <returns>生成結果</returns>
-    public static GenerationResult Generate(INamedTypeSymbol targetType, string? testNamespace)
+    public static GenerationResult Generate(INamedTypeSymbol targetType, Compilation compilation, string? testNamespace)
     {
         var testClassName = targetType.Name + TestClassSuffix;
+        var renderer = new ValueRenderer();
+        var manualItems = new List<string>();
+        var tests = PlanTests(targetType, compilation, manualItems, out var sut);
 
         // 文字列連結ではなくSyntaxFactoryで組み立て、整形はRoslynに任せる
+        var builder = new TestSyntaxBuilder(targetType, renderer);
+        var members = new List<MemberDeclarationSyntax>(tests.Count + 1);
+        if (tests.Any(t => t.UsesSut)) members.Add(builder.BuildSutField(sut));
+        members.AddRange(tests.Select(builder.BuildExceptionTest));
+
         var testClass = ClassDeclaration(testClassName)
-            .AddModifiers(Token(SyntaxKind.PublicKeyword));
+            .AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .AddMembers([.. members]);
+
+        renderer.AddNamespace(XUnitNamespace);
+        if (targetType.ContainingNamespace is { IsGlobalNamespace: false } targetNamespace) renderer.AddNamespace(targetNamespace.ToDisplayString());
 
         var compilationUnit = CompilationUnit()
-            .AddUsings(BuildUsings(targetType, testNamespace))
+            .AddUsings(BuildUsings(renderer.Namespaces, testNamespace))
             .AddMembers(WrapInNamespace(testNamespace, testClass))
-            .NormalizeWhitespace()
-            .WithTrailingTrivia(CarriageReturnLineFeed);
+            .NormalizeWhitespace(eol: "\r\n");
 
-        return new GenerationResult(testClassName, compilationUnit.ToFullString());
+        var formatted = Format(compilationUnit, manualItems);
+        return new GenerationResult(testClassName, formatted.ToFullString(), tests.Count, manualItems);
     }
 
     /// <summary>
-    /// xUnitと、テスト対象の名前空間（テスト側から見えない場合のみ）のusingを作る
+    /// クラス内の public なメソッド・コンストラクタから、例外テストを計画する
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
-    /// <param name="testNamespace">テストクラスを置く名前空間</param>
-    /// <returns>名前順に並べたusingディレクティブ</returns>
-    private static UsingDirectiveSyntax[] BuildUsings(INamedTypeSymbol targetType, string? testNamespace)
+    /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
+    /// <param name="manualItems">要手動項目の追加先</param>
+    /// <param name="sut">テスト対象のインスタンスの作り方</param>
+    /// <returns>例外テストの一覧（テスト名の重複は除く）</returns>
+    private static List<ExceptionTestCase> PlanTests(
+        INamedTypeSymbol targetType, Compilation compilation, List<string> manualItems, out SutPlan sut)
     {
-        var namespaces = new List<string>(2) { XUnitNamespace };
-
-        // テスト側の名前空間と同じか、その親の名前空間であれば、usingなしで参照できる
-        var targetNamespace = targetType.ContainingNamespace;
-        if (targetNamespace is not null && !targetNamespace.IsGlobalNamespace)
+        sut = SutPlan.Create(targetType, compilation);
+        if (targetType.IsGenericType)
         {
-            var target = targetNamespace.ToDisplayString();
-            var test = testNamespace ?? string.Empty;
-            if (test != target && !test.StartsWith(target + ".", StringComparison.Ordinal)) namespaces.Add(target);
+            manualItems.Add($"{targetType.Name}: ジェネリッククラスは型引数を決められないため対象外です");
+            return [];
         }
 
+        var planner = new ExceptionTestPlanner(compilation, sut, manualItems);
+        var candidates = targetType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(IsTestTarget)
+            .OrderBy(m => m.MethodKind == MethodKind.Constructor ? 0 : 1)
+            .SelectMany(planner.Plan);
+
+        // テスト名は重複検出のキーにもなるため、同名になるもの（オーバーロードなど）は先勝ちにして残りを要手動にする
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var tests = new List<ExceptionTestCase>();
+        foreach (var test in candidates)
+        {
+            if (names.Add(test.TestName)) tests.Add(test);
+            else manualItems.Add($"{MemberDisplay.Of(test.Member)}: テスト名 {test.TestName} が重複するため生成していません");
+        }
+
+        return tests;
+    }
+
+    /// <summary>
+    /// テスト生成の対象となるメンバー（public なメソッド・コンストラクタ）かを判定する
+    /// </summary>
+    /// <param name="member">メンバー</param>
+    /// <returns>対象ならtrue</returns>
+    private static bool IsTestTarget(IMethodSymbol member)
+    {
+        return member.DeclaredAccessibility == Accessibility.Public
+            && !member.IsImplicitlyDeclared
+            && member.MethodKind is MethodKind.Ordinary or MethodKind.Constructor;
+    }
+
+    /// <summary>
+    /// テスト側から見えない名前空間の using を作る（System系を先頭、残りは名前順）
+    /// </summary>
+    /// <param name="namespaces">必要な名前空間</param>
+    /// <param name="testNamespace">テストクラスを置く名前空間</param>
+    /// <returns>usingディレクティブ</returns>
+    private static UsingDirectiveSyntax[] BuildUsings(IEnumerable<string> namespaces, string? testNamespace)
+    {
+        // テスト側の名前空間と同じか、その親の名前空間であれば、usingなしで参照できる
+        var test = testNamespace ?? string.Empty;
         return namespaces
-            .OrderBy(n => n, StringComparer.Ordinal)
+            .Where(n => n != test && !test.StartsWith(n + ".", StringComparison.Ordinal))
+            .OrderBy(n => n == "System" || n.StartsWith("System.", StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(n => n, StringComparer.Ordinal)
             .Select(n => UsingDirective(ParseName(n)))
             .ToArray();
     }
@@ -73,5 +132,54 @@ public static class TestClassGenerator
 
         return FileScopedNamespaceDeclaration(ParseName(testNamespace!))
             .AddMembers(testClass);
+    }
+
+    /// <summary>
+    /// NormalizeWhitespace の結果に、メンバー間の空行・要手動コメント・末尾の改行を加える
+    /// </summary>
+    /// <param name="compilationUnit">整形済みのファイル</param>
+    /// <param name="manualItems">要手動項目</param>
+    /// <returns>整形したファイル</returns>
+    private static CompilationUnitSyntax Format(CompilationUnitSyntax compilationUnit, IReadOnlyList<string> manualItems)
+    {
+        // NormalizeWhitespace は null! を「null !」と出力するため、演算子の前の空白を取り除く
+        compilationUnit = compilationUnit.ReplaceNodes(
+            compilationUnit.DescendantNodes().OfType<PostfixUnaryExpressionSyntax>().Where(n => n.IsKind(SyntaxKind.SuppressNullableWarningExpression)),
+            (_, rewritten) => rewritten.WithOperand(rewritten.Operand.WithoutTrailingTrivia()));
+
+        var testClass = compilationUnit.DescendantNodes().OfType<ClassDeclarationSyntax>().First();
+
+        // NormalizeWhitespace はメソッド同士の間にだけ空行を入れるため、空行がない箇所（フィールドの後など）に補う
+        var members = testClass.Members.Select((m, i) => i == 0 || EndsWithBlankLine(testClass.Members[i - 1])
+            ? m
+            : m.WithLeadingTrivia(m.GetLeadingTrivia().Insert(0, CarriageReturnLineFeed)));
+        var comments = new List<SyntaxTrivia>();
+        if (0 < testClass.Members.Count && 0 < manualItems.Count) comments.Add(CarriageReturnLineFeed);
+        foreach (var item in manualItems)
+        {
+            comments.AddRange([Whitespace(Indent), Comment(ManualPrefix + item), CarriageReturnLineFeed]);
+        }
+
+        var formattedClass = testClass
+            .WithMembers(List(members))
+            .WithCloseBraceToken(testClass.CloseBraceToken.WithLeadingTrivia(comments));
+
+        // file-scoped namespace の宣言とクラスの間に空行を入れる
+        if (testClass.Parent is FileScopedNamespaceDeclarationSyntax)
+        {
+            formattedClass = formattedClass.WithLeadingTrivia(formattedClass.GetLeadingTrivia().Insert(0, CarriageReturnLineFeed));
+        }
+
+        return compilationUnit.ReplaceNode(testClass, formattedClass).WithTrailingTrivia(CarriageReturnLineFeed);
+    }
+
+    /// <summary>
+    /// メンバーの後ろに空行（改行2つ）があるかを判定する
+    /// </summary>
+    /// <param name="member">メンバー</param>
+    /// <returns>空行があればtrue</returns>
+    private static bool EndsWithBlankLine(MemberDeclarationSyntax member)
+    {
+        return 2 <= member.GetTrailingTrivia().Count(t => t.IsKind(SyntaxKind.EndOfLineTrivia));
     }
 }

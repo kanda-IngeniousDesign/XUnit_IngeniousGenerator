@@ -1,21 +1,19 @@
-using IngeniousXUnitGenerator.Core;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
+using IngeniousXUnitGenerator.Tests.Support;
 
 namespace IngeniousXUnitGenerator.Tests;
 
 public class TestClassGeneratorTests
 {
     [Fact]
-    public void Generate_TestNamespaceDiffersFromTarget_AddsUsingForTargetNamespace()
+    public void Generate_ClassWithoutGuards_EmitsEmptyTestClass()
     {
-        var targetType = GetType("namespace Sample.Domain; public class Foo { }", "Sample.Domain.Foo");
-
-        var result = TestClassGenerator.Generate(targetType, "Sample.Tests.Domain");
+        var result = TargetCompiler.Generate("namespace Sample.Domain; public class Foo { }", "Sample.Domain.Foo", "Sample.Tests.Domain");
 
         Assert.Equal("FooTests", result.TestClassName);
+        Assert.Equal(0, result.GeneratedTestCount);
+        Assert.Empty(result.ManualItems);
         Assert.Equal(
-            "using Sample.Domain;\r\nusing Xunit;\r\n\r\nnamespace Sample.Tests.Domain;\r\npublic class FooTests\r\n{\r\n}\r\n",
+            "using Sample.Domain;\r\nusing Xunit;\r\n\r\nnamespace Sample.Tests.Domain;\r\n\r\npublic class FooTests\r\n{\r\n}\r\n",
             result.Code);
     }
 
@@ -24,9 +22,7 @@ public class TestClassGeneratorTests
     [InlineData("Sample.Domain.Tests")]
     public void Generate_TargetNamespaceVisibleFromTestNamespace_OmitsUsing(string testNamespace)
     {
-        var targetType = GetType("namespace Sample.Domain; public class Foo { }", "Sample.Domain.Foo");
-
-        var result = TestClassGenerator.Generate(targetType, testNamespace);
+        var result = TargetCompiler.Generate("namespace Sample.Domain; public class Foo { }", "Sample.Domain.Foo", testNamespace);
 
         Assert.DoesNotContain("using Sample.Domain;", result.Code);
     }
@@ -34,22 +30,65 @@ public class TestClassGeneratorTests
     [Fact]
     public void Generate_NoTestNamespace_EmitsTestClassWithoutNamespace()
     {
-        var targetType = GetType("public class Foo { }", "Foo");
-
-        var result = TestClassGenerator.Generate(targetType, null);
+        var result = TargetCompiler.Generate("public class Foo { }", "Foo", null);
 
         Assert.DoesNotContain("namespace", result.Code);
         Assert.Contains("public class FooTests", result.Code);
     }
 
-    private static INamedTypeSymbol GetType(string source, string metadataName)
+    [Fact]
+    public async Task Generate_GuardedMethod_EmitsFormattedTestFile()
     {
-        var compilation = CSharpCompilation.Create(
-            "Target",
-            [CSharpSyntaxTree.ParseText(source)],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
+        const string source = """
+            using System;
+            namespace Sample;
+            public class Calculator
+            {
+                public int Divide(int dividend, int divisor)
+                {
+                    if (divisor == 0) throw new ArgumentOutOfRangeException(nameof(divisor));
+                    return dividend / divisor;
+                }
 
-        return compilation.GetTypeByMetadataName(metadataName)
-            ?? throw new InvalidOperationException($"{metadataName} が見つかりません。");
+                public static int Negate(int value)
+                {
+                    if (value == int.MinValue) throw new OverflowException();
+                    return -value;
+                }
+            }
+            """;
+
+        var result = TargetCompiler.Generate(source, "Sample.Calculator");
+
+        Assert.Equal(
+            """
+            using System;
+            using Xunit;
+
+            namespace Sample.Tests;
+
+            public class CalculatorTests
+            {
+                private readonly Calculator _sut = new Calculator();
+
+                [Fact]
+                public void Divide_DivisorIsZero_ThrowsArgumentOutOfRangeException()
+                {
+                    var exception = Assert.Throws<ArgumentOutOfRangeException>(() => _sut.Divide(0, 0));
+                    Assert.Equal("divisor", exception.ParamName);
+                }
+
+                [Fact]
+                public void Negate_ValueIsMinus2147483648_ThrowsOverflowException()
+                {
+                    Assert.Throws<OverflowException>(() => Calculator.Negate(-2147483648));
+                }
+            }
+
+            """.ReplaceLineEndings("\r\n"),
+            result.Code);
+
+        // int.MinValue の境界値（-2147483648）がそのままコンパイルでき、テストが成功すること
+        await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
     }
 }
