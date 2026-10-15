@@ -21,14 +21,14 @@ C#のクラス・メソッドから、xUnitのテストコードを**LLMを使�
 
 関心事を分離し、コアロジックは一つだけ持つ。入口はコアを呼ぶ薄い層にする。
 
-- **コアライブラリ**（`netstandard2.0`、Roslynによる構文・意味解析、テストコード生成、整形）: 例として `Ingenious.XUnitGenerator.Core`。
-- **入口A: CodeRefactoringProvider**（Analyzerパッケージとして配布）: クラス名の上でクイックアクション（`Ctrl+.`）に「このクラスのテストコードを生成」、メソッド上に「このメソッドのみ生成」を出す。
-- **入口B: dotnet tool（CLI）**: 例として `dotnet ingenious-xunit gen --project Foo.csproj --class Bar [--method Baz]`。CIやVisual Studioなしの環境でも使える。
+- **コアライブラリ**（`netstandard2.0`、Roslynによる構文・意味解析、テストコード生成、整形）: `IngeniousXUnitGenerator.Core`。
+- **入口A（主入口）: CodeRefactoringProvider**（Analyzerパッケージとして配布）: クラス名の上でクイックアクション（`Ctrl+.`）に「このクラスのテストコードを生成」、メソッド上に「このメソッドのみ生成」を出す。利用者は通常GUIで操作するため、こちらを優先して作り込む。
+- **入口B（後回し）: dotnet tool（CLI）**: 例として `dotnet ingenious-xunit gen --project Foo.csproj --class Bar [--method Baz]`。CIでの利用など、必要になった時点で着手する。開発中の精度計測（実コードでまとめて生成し、要手動の件数を集計する）は、CLIではなく作業用スクリプトで行う。
 - **VSIX（右クリックメニュー）は当面作らない。** 必要になったら、コアまたはCLIを呼ぶ薄いラッパーとして最後に検討する。VS内蔵のRoslynとのアセンブリ競合を避けるため、コアは `netstandard2.0` にしている。
 
 コアのAPIは「クラスを渡すと、テストファイル1つ分のコードとレポートを返す」形を基本にする。メソッド単位の生成は、その部分実行として扱う。
 
-ソリューション構成の案（変更可）: `Ingenious.XUnitGenerator.Core` / `.Cli` / `.Analyzers`（RefactoringProvider）/ `.Tests`。
+ソリューション構成: `IngeniousXUnitGenerator.Core` / `.Analyzers`（RefactoringProvider、パッケージID `IngeniousXUnitGenerator`）/ `.Cli`（引数の受け口のみ）/ `.Tests`。`samples/PlacementCheck` は、ローカルのパッケージを読み込んで電球メニューを試すためのサンプルである。
 
 ## 生成する内容（LLMなしで機械的に出せる範囲）
 
@@ -51,21 +51,31 @@ C#のクラス・メソッドから、xUnitのテストコードを**LLMを使�
 - **命名規約は `Method_Condition_Expected` で固定。** 重複検出のキーにもなる。
 - **生成量の制御。** メソッドごとに生成の有効・無効を選べるようにし、生成した件数と要手動の件数をレポートとして出力する。
 - **対象外・後回し:** 抽象クラス（具象サブクラスが必要）、状態を持つクラスのうち前提状態を作れないもの、UIコードビハインドや静的依存の強いコード（「生成不可」と判定してUIオーケストレーター側に回す）。staticクラスはインスタンス生成が不要なので対応しやすい。
-- **配布面の検証事項:** RefactoringProviderから、別のテストプロジェクトへ生成ファイルを追加する処理がVS上で動くか、早めに検証する。動かない場合は、CLIを主入口とし、RefactoringProviderは同一プロジェクト内への生成に限定するなど、方針を見直す。
+- **配布面の検証:** RefactoringProviderから別のテストプロジェクトへ生成ファイルを追加する処理は、Mac上のVS Code（C# Dev Kit）で動作を確認済み（csprojは変更されない）。開発・検証はMacで完結させ、Windows版Visual Studioでの確認はNuGet公開前に1回だけ行う。
+- **テストプロジェクトの特定:** 対象プロジェクトを参照し、かつxUnit（`xunit.core` / `xunit.v3.core`）を参照しているプロジェクトを候補にする。複数あれば候補ごとにメニューを出す。生成ファイルは対象と同じフォルダ構成に置き、名前空間は「テストプロジェクトの既定の名前空間＋フォルダ」にする。
+- **MSBuildWorkspaceの制約（CLI・作業用スクリプト向け）:** 4.11は `.slnx` を開けないため、csprojを指定して読み込む。また `TryApplyChanges` でファイルを追加するとcsprojに `<Compile Include>` が書き足され、SDK形式のプロジェクトでは重複エラー（NETSDK1022）になるため、生成ファイルはディスクへ直接書き込む。
 
 ## 既存資産との接続
 
 - 生成した入力パターンを、そのまま**パターン一覧**として出力できるようにし、xUnitとUIオーケストレーターで同じ一覧を共有する（単体で担保済みか、UI側で担保するかの対応づけに使う）。
 - 生成物の品質ルール（Assertなし、命名規約違反、`Thread.Sleep`、未記入マーカー残り）は、`CSharp_IngeniousAnalyzer` にテストコード向けルールとして追加し、同じ仕組みで効かせる。
 
-## 最初の一歩
+## 進捗と今後の順序
 
-1. ソリューションのひな型を作る（Core / Cli / Tests）。
-2. Coreで「メソッド1つ → 境界値・例外系・分岐の候補を抽出してxUnitコードを出力」までを最小実装する。
-3. CLIで動かして精度を確認する。
-4. クラス単位の生成（共通部分の一回生成、既存ファイルとのマージ、レポート）に拡張する。
-5. RefactoringProviderを載せ、VS上での動作を検証する。
+済み:
+
+1. ソリューションのひな型（Core / Analyzers / Cli / Tests）。
+2. RefactoringProviderによるテストプロジェクトへの配置（VS Codeで確認済み）。
+3. 例外系の生成: メソッド先頭に連続するガード（`if (...) throw new T(...)`、`ThrowIf～` 系、`?? throw`）から `Assert.Throws<T>` とParamNameの確認を生成する。それ以外は「要手動」としてコメントとレポートに残す。生成したテストは、対象と一緒にコンパイル・実行して成功することを自動テストで確かめている。
+
+これから:
+
+4. 境界値（`[Theory]` と `InlineData`）。戻り値の期待値は雛形方式とし、未記入なら `NotImplementedException` で落とす。
+5. 分岐網羅、依存のモック（Moq）。
+6. クラス単位の生成の仕上げ（既存ファイルとのマージ、「このメソッドのみ生成」）。
+7. NuGet公開前に、Windows版Visual Studioで電球メニューを確認する。
+8. CLIは、CIでの利用など必要になった時点で着手する。
 
 ## 進め方
 
-Claude Codeとは、設計判断が分かれる箇所（特に戻り値の期待値の扱いと、RefactoringProviderの配置処理）を相談しながら、小さく作って動かす形で進めたい。コードのスタイルは既存の `CSharp_IngeniousAnalyzer` に合わせる。
+Claude Codeとは、設計判断が分かれる箇所（特に戻り値の期待値の扱い）を相談しながら、小さく作って動かす形で進めたい。コードのスタイルは既存の `CSharp_IngeniousAnalyzer` に合わせる。CoreとAnalyzersは `CSharp_IngeniousAnalyzer` を参照しており、自分自身のルール（COMM001の関数ヘッダー、COMP001の不等号の向きなど）が効く。
