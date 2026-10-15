@@ -35,7 +35,7 @@ public static class TestClassGenerator
         var builder = new TestSyntaxBuilder(targetType, renderer);
         var members = new List<MemberDeclarationSyntax>(tests.Count + 1);
         if (tests.Any(t => t.UsesSut)) members.Add(builder.BuildSutField(sut));
-        members.AddRange(tests.Select(builder.BuildExceptionTest));
+        members.AddRange(tests.SelectMany(t => t.Build(builder)));
 
         var testClass = ClassDeclaration(testClassName)
             .AddModifiers(Token(SyntaxKind.PublicKeyword))
@@ -54,14 +54,14 @@ public static class TestClassGenerator
     }
 
     /// <summary>
-    /// クラス内の public なメソッド・コンストラクタから、例外テストを計画する
+    /// クラス内の public なメソッド・コンストラクタから、例外テスト・戻り値テストを計画する
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
     /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="manualItems">要手動項目の追加先</param>
     /// <param name="sut">テスト対象のインスタンスの作り方</param>
-    /// <returns>例外テストの一覧（テスト名の重複は除く）</returns>
-    private static List<ExceptionTestCase> PlanTests(
+    /// <returns>テストの一覧（テスト名の重複は除く）</returns>
+    private static List<PlannedTest> PlanTests(
         INamedTypeSymbol targetType, Compilation compilation, List<string> manualItems, out SutPlan sut)
     {
         sut = SutPlan.Create(targetType, compilation);
@@ -71,7 +71,7 @@ public static class TestClassGenerator
             return [];
         }
 
-        var planner = new ExceptionTestPlanner(compilation, sut, manualItems);
+        var planner = new MemberTestPlanner(compilation, sut, manualItems);
         var candidates = targetType.GetMembers()
             .OfType<IMethodSymbol>()
             .Where(IsTestTarget)
@@ -80,7 +80,7 @@ public static class TestClassGenerator
 
         // テスト名は重複検出のキーにもなるため、同名になるもの（オーバーロードなど）は先勝ちにして残りを要手動にする
         var names = new HashSet<string>(StringComparer.Ordinal);
-        var tests = new List<ExceptionTestCase>();
+        var tests = new List<PlannedTest>();
         foreach (var test in candidates)
         {
             if (names.Add(test.TestName)) tests.Add(test);
@@ -147,6 +147,11 @@ public static class TestClassGenerator
             compilationUnit.DescendantNodes().OfType<PostfixUnaryExpressionSyntax>().Where(n => n.IsKind(SyntaxKind.SuppressNullableWarningExpression)),
             (_, rewritten) => rewritten.WithOperand(rewritten.Operand.WithoutTrailingTrivia()));
 
+        // TheoryData の1行（{ 入力, 期待値 }）は、NormalizeWhitespace が縦に展開するため1行にまとめる
+        compilationUnit = compilationUnit.ReplaceNodes(
+            compilationUnit.DescendantNodes().OfType<InitializerExpressionSyntax>().Where(n => n.IsKind(SyntaxKind.ComplexElementInitializerExpression)),
+            (original, _) => ToSingleLine(original));
+
         var testClass = compilationUnit.DescendantNodes().OfType<ClassDeclarationSyntax>().First();
 
         // NormalizeWhitespace はメソッド同士の間にだけ空行を入れるため、空行がない箇所（フィールドの後など）に補う
@@ -171,6 +176,21 @@ public static class TestClassGenerator
         }
 
         return compilationUnit.ReplaceNode(testClass, formattedClass).WithTrailingTrivia(CarriageReturnLineFeed);
+    }
+
+    /// <summary>
+    /// { a, b, c } の形の初期化子を1行にする（前後の改行・インデントはそのまま）
+    /// </summary>
+    /// <param name="initializer">初期化子</param>
+    /// <returns>1行にした初期化子</returns>
+    private static InitializerExpressionSyntax ToSingleLine(InitializerExpressionSyntax initializer)
+    {
+        var expressions = initializer.Expressions.Select(e => e.WithoutTrivia());
+        var separators = Enumerable.Repeat(Token(SyntaxKind.CommaToken).WithTrailingTrivia(Space), Math.Max(0, initializer.Expressions.Count - 1));
+        return initializer
+            .WithOpenBraceToken(Token(SyntaxKind.OpenBraceToken).WithLeadingTrivia(initializer.OpenBraceToken.LeadingTrivia).WithTrailingTrivia(Space))
+            .WithExpressions(SeparatedList(expressions, separators))
+            .WithCloseBraceToken(Token(SyntaxKind.CloseBraceToken).WithLeadingTrivia(Space).WithTrailingTrivia(initializer.CloseBraceToken.TrailingTrivia));
     }
 
     /// <summary>

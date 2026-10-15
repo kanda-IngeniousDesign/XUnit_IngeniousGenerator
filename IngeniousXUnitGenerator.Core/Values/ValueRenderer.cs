@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -58,6 +59,26 @@ public sealed class ValueRenderer
     }
 
     /// <summary>
+    /// .NET の値（int, long, double, decimal, bool, string）を、型の分かるリテラルにする（属性の引数にも使える形）
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <returns>式の構文</returns>
+    public static ExpressionSyntax RenderClrValue(object? value)
+    {
+        return value switch
+        {
+            null => LiteralExpression(SyntaxKind.NullLiteralExpression),
+            bool b => LiteralExpression(b ? SyntaxKind.TrueLiteralExpression : SyntaxKind.FalseLiteralExpression),
+            string s => LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(s)),
+            int i => Signed(i < 0, IntegerLiteral(Math.Abs((decimal)i))),
+            long l => Signed(l < 0, SuffixedLiteral(Math.Abs((decimal)l).ToString(CultureInfo.InvariantCulture), "L", (ulong)Math.Abs((decimal)l))),
+            double d => Signed(d < 0, SuffixedLiteral(Math.Abs(d).ToString("R", CultureInfo.InvariantCulture), "D", Math.Abs(d))),
+            decimal m => Signed(m < 0, SuffixedLiteral(TrimDecimal(Math.Abs(m)).ToString(CultureInfo.InvariantCulture), "M", Math.Abs(m))),
+            _ => throw new ArgumentException($"未対応の値の型です: {value.GetType()}", nameof(value)),
+        };
+    }
+
+    /// <summary>
     /// 値を式にする
     /// </summary>
     /// <param name="value">値</param>
@@ -100,6 +121,45 @@ public sealed class ValueRenderer
 
         var literal = LiteralExpression(SyntaxKind.NumericLiteralExpression, token);
         return number < 0 ? PrefixUnaryExpression(SyntaxKind.UnaryMinusExpression, literal) : literal;
+    }
+
+    /// <summary>
+    /// decimal の末尾の 0 を落とす（9500.00 → 9500。値としては等しい）
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <returns>末尾の 0 を落とした値</returns>
+    private static decimal TrimDecimal(decimal value)
+    {
+        return value / 1.0000000000000000000000000000m;
+    }
+
+    /// <summary>
+    /// 負数なら単項マイナスを付ける
+    /// </summary>
+    /// <param name="negative">負数か</param>
+    /// <param name="token">絶対値のリテラル</param>
+    /// <returns>式の構文</returns>
+    private static ExpressionSyntax Signed(bool negative, SyntaxToken token)
+    {
+        var literal = LiteralExpression(SyntaxKind.NumericLiteralExpression, token);
+        return negative ? PrefixUnaryExpression(SyntaxKind.UnaryMinusExpression, literal) : literal;
+    }
+
+    /// <summary>
+    /// 型の接尾辞（L, D, M）付きの数値リテラルを作る
+    /// </summary>
+    /// <param name="text">数値の文字列</param>
+    /// <param name="suffix">接尾辞</param>
+    /// <param name="value">トークンが持つ値</param>
+    /// <returns>リテラルのトークン</returns>
+    private static SyntaxToken SuffixedLiteral(string text, string suffix, object value)
+    {
+        return value switch
+        {
+            double d => Literal(text + suffix, d),
+            decimal m => Literal(text + suffix, m),
+            _ => Literal(text + suffix, (ulong)value),
+        };
     }
 
     /// <summary>

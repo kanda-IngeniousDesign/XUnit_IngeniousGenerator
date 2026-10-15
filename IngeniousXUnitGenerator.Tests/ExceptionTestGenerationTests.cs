@@ -125,7 +125,7 @@ public class ExceptionTestGenerationTests
                 "SaveAsync_KeyIsEmpty_ThrowsArgumentException",
                 "CountAsync_PrefixIsNull_ThrowsArgumentNullException",
             ],
-            passed);
+            OnlyExceptionTests(passed));
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public class ExceptionTestGenerationTests
                 "Convert_StepsIsNull_ThrowsArgumentNullException",
                 "Convert_ValueIsZero_ThrowsArgumentOutOfRangeException",
             ],
-            passed);
+            OnlyExceptionTests(passed));
     }
 
     [Fact]
@@ -194,10 +194,10 @@ public class ExceptionTestGenerationTests
         Assert.Equal(
             [
                 "Run(int, int): テスト対象のインスタンスを生成できないため対象外です（ガードを通過する引数を決められるpublicコンストラクタがないため（モックは未対応））",
-                "Stop(int): ガードより後ろにある throw 1 件は、前提状態が分からないため対象外です",
+                "Stop(int): ガードより後ろにある throw 1 件は、前提状態が分からないため例外テストの対象外です",
             ],
             result.ManualItems);
-        Assert.Contains("    // 要手動: Stop(int): ガードより後ろにある throw 1 件は、前提状態が分からないため対象外です", result.Code);
+        Assert.Contains("    // 要手動: Stop(int): ガードより後ろにある throw 1 件は、前提状態が分からないため例外テストの対象外です", result.Code);
     }
 
     [Fact]
@@ -242,16 +242,20 @@ public class ExceptionTestGenerationTests
 
         Assert.Contains("_sut.Print((string)null!)", result.Code);
         Assert.Contains("_sut.Print((object)null!)", result.Code);
-        Assert.Equal(["Print_TextIsNull_ThrowsArgumentNullException", "Print_ValueIsNull_ThrowsArgumentNullException"], passed);
+        Assert.Equal(["Print_TextIsNull_ThrowsArgumentNullException", "Print_ValueIsNull_ThrowsArgumentNullException"], OnlyExceptionTests(passed));
     }
 
     private static async Task<IReadOnlyList<string>> GenerateAndRunAsync(string source, string metadataName)
     {
         var result = TargetCompiler.Generate(source, metadataName);
-        Assert.Empty(result.ManualItems);
-
         var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
         Assert.Equal(result.GeneratedTestCount, passed.Count);
-        return passed;
+        return OnlyExceptionTests(passed);
+    }
+
+    // 戻り値テストは ReturnValueGenerationTests で確認するため、ここでは例外テストだけを比べる
+    private static List<string> OnlyExceptionTests(IEnumerable<string> testNames)
+    {
+        return testNames.Where(n => n.Contains("_Throws", StringComparison.Ordinal)).ToList();
     }
 }

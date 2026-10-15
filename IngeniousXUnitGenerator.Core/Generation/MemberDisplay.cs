@@ -30,7 +30,7 @@ internal static class MemberDisplay
     }
 
     /// <summary>
-    /// 本体を持つ宣言を探す
+    /// 本体（ブロックまたは式本体）を持つ宣言を探す
     /// </summary>
     /// <param name="member">メソッド・コンストラクタ</param>
     /// <returns>宣言（本体がない、またはソースがない場合はnull）</returns>
@@ -39,7 +39,7 @@ internal static class MemberDisplay
         return member.DeclaringSyntaxReferences
             .Select(r => r.GetSyntax())
             .OfType<BaseMethodDeclarationSyntax>()
-            .FirstOrDefault(d => d.Body is not null);
+            .FirstOrDefault(d => d.Body is not null || d.ExpressionBody is not null);
     }
 
     /// <summary>

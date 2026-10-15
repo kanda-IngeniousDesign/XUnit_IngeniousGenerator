@@ -78,10 +78,29 @@ public class TestClassGeneratorTests
                     Assert.Equal("divisor", exception.ParamName);
                 }
 
+                [Theory]
+                [InlineData(1, 1, 1)]
+                [InlineData(0, 1, 0)]
+                [InlineData(-1, 1, -1)]
+                [InlineData(1, -1, -1)]
+                public void Divide_BoundaryValues_ReturnsExpected(int dividend, int divisor, int expected)
+                {
+                    Assert.Equal(expected, _sut.Divide(dividend, divisor));
+                }
+
                 [Fact]
                 public void Negate_ValueIsMinus2147483648_ThrowsOverflowException()
                 {
                     Assert.Throws<OverflowException>(() => Calculator.Negate(-2147483648));
+                }
+
+                [Theory]
+                [InlineData(1, -1)]
+                [InlineData(-2147483647, 2147483647)]
+                [InlineData(0, 0)]
+                public void Negate_BoundaryValues_ReturnsExpected(int value, int expected)
+                {
+                    Assert.Equal(expected, Calculator.Negate(value));
                 }
             }
 

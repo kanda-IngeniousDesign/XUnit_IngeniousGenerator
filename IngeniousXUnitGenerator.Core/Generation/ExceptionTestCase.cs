@@ -1,12 +1,13 @@
 using IngeniousXUnitGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace IngeniousXUnitGenerator.Core.Generation;
 
 /// <summary>
 /// 生成する例外テスト1件分の内容
 /// </summary>
-internal sealed class ExceptionTestCase
+internal sealed class ExceptionTestCase : PlannedTest
 {
     /// <summary>
     /// 例外テストの内容を作成する
@@ -18,19 +19,12 @@ internal sealed class ExceptionTestCase
     /// <param name="arguments">呼び出しに渡す値（引数の順）</param>
     public ExceptionTestCase(
         IMethodSymbol member, string testName, INamedTypeSymbol exceptionType, string? paramName, IReadOnlyList<(TestValue Value, ITypeSymbol Type)> arguments)
+        : base(member, testName)
     {
-        Member = member;
-        TestName = testName;
         ExceptionType = exceptionType;
         ParamName = paramName;
         Arguments = arguments;
     }
-
-    /// <summary>テスト対象のメソッド・コンストラクタ</summary>
-    public IMethodSymbol Member { get; }
-
-    /// <summary>テストメソッド名（Method_Condition_Expected）</summary>
-    public string TestName { get; }
 
     /// <summary>期待する例外の型</summary>
     public INamedTypeSymbol ExceptionType { get; }
@@ -41,6 +35,13 @@ internal sealed class ExceptionTestCase
     /// <summary>呼び出しに渡す値（引数の順）</summary>
     public IReadOnlyList<(TestValue Value, ITypeSymbol Type)> Arguments { get; }
 
-    /// <summary>テスト対象のインスタンス（_sut）を使うか</summary>
-    public bool UsesSut => Member.MethodKind == MethodKind.Ordinary && !Member.IsStatic;
+    /// <summary>
+    /// 例外テストのメソッドを組み立てる
+    /// </summary>
+    /// <param name="builder">構文の組み立て</param>
+    /// <returns>テストメソッド</returns>
+    public override IEnumerable<MemberDeclarationSyntax> Build(TestSyntaxBuilder builder)
+    {
+        return [builder.BuildExceptionTest(this)];
+    }
 }

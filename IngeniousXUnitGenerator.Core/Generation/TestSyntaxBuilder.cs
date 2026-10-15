@@ -92,7 +92,7 @@ internal sealed class TestSyntaxBuilder
     /// <returns>アサーションの式</returns>
     private ExpressionSyntax BuildThrowsAssertion(ExceptionTestCase test, AwaitKind awaitKind)
     {
-        var call = BuildCall(test);
+        var call = BuildCall(test.Member, BuildArguments(test.Member, test.Arguments));
 
         // ValueTask は Func<Task> に渡せないため、async ラムダで待機して Task にする
         LambdaExpressionSyntax lambda = awaitKind == AwaitKind.ValueTask
@@ -107,14 +107,99 @@ internal sealed class TestSyntaxBuilder
     }
 
     /// <summary>
-    /// テスト対象の呼び出し（new T(...) / T.M(...) / _sut.M(...)）を作る
+    /// 戻り値テスト（[Theory] と、境界値ごとの InlineData または MemberData）を作る
     /// </summary>
-    /// <param name="test">例外テストの内容</param>
-    /// <returns>呼び出しの式</returns>
-    private ExpressionSyntax BuildCall(ExceptionTestCase test)
+    /// <param name="test">戻り値テストの内容</param>
+    /// <returns>テストメソッド（decimal を含む場合はテストデータのプロパティも）</returns>
+    public IEnumerable<MemberDeclarationSyntax> BuildReturnValueTest(ReturnValueTestCase test)
     {
         var member = test.Member;
-        var arguments = BuildArguments(member, test.Arguments);
+        var expectedName = member.Parameters.Any(p => p.Name == "expected") ? "expectedResult" : "expected";
+        var parameters = member.Parameters
+            .Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)))
+            .Append(Parameter(Identifier(expectedName)).WithType(_renderer.RenderType(member.ReturnType)));
+        var arguments = ArgumentList(SeparatedList(member.Parameters.Select(p => Argument(IdentifierName(EscapeIdentifier(p.Name))))));
+        var assertion = ExpressionStatement(InvocationExpression(
+            AssertMember(IdentifierName("Equal")),
+            ArgumentList(SeparatedList([Argument(IdentifierName(expectedName)), Argument(BuildCall(member, arguments))]))));
+
+        var method = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), test.TestName)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .AddParameterListParameters([.. parameters])
+            .WithBody(Block(assertion));
+
+        // decimal は属性の引数に書けないため、TheoryData のプロパティから渡す
+        var usesDecimal = member.Parameters.Select(p => p.Type).Append(member.ReturnType).Any(t => t.SpecialType == SpecialType.System_Decimal);
+        if (!usesDecimal)
+        {
+            var inlineData = test.Rows.Select(r => AttributeList(SingletonSeparatedList(Attribute(
+                IdentifierName("InlineData"),
+                AttributeArgumentList(SeparatedList(r.Inputs.Append(r.Expected).Select(v => AttributeArgument(ValueRenderer.RenderClrValue(v)))))))));
+            return [method.AddAttributeLists([TheoryAttribute(), .. inlineData])];
+        }
+
+        var dataName = MemberDisplay.GetTestName(member) + "_BoundaryValues";
+        var memberData = AttributeList(SingletonSeparatedList(Attribute(
+            IdentifierName("MemberData"),
+            AttributeArgumentList(SingletonSeparatedList(AttributeArgument(
+                InvocationExpression(IdentifierName("nameof"), ArgumentList(SingletonSeparatedList(Argument(IdentifierName(dataName)))))))))));
+        return [BuildTheoryData(test, dataName), method.AddAttributeLists(TheoryAttribute(), memberData)];
+    }
+
+    /// <summary>
+    /// public static TheoryData&lt;...&gt; 名前 =&gt; new TheoryData&lt;...&gt; { { 入力..., 期待値 }, ... }; を作る
+    /// </summary>
+    /// <param name="test">戻り値テストの内容</param>
+    /// <param name="dataName">プロパティ名</param>
+    /// <returns>プロパティの宣言</returns>
+    private PropertyDeclarationSyntax BuildTheoryData(ReturnValueTestCase test, string dataName)
+    {
+        var typeArguments = test.Member.Parameters.Select(p => p.Type).Append(test.Member.ReturnType).Select(_renderer.RenderType);
+        var theoryDataType = GenericName("TheoryData").WithTypeArgumentList(TypeArgumentList(SeparatedList(typeArguments)));
+
+        var rows = test.Rows.Select(r =>
+        {
+            var values = r.Inputs.Append(r.Expected).Select(ValueRenderer.RenderClrValue).ToList();
+            return values.Count == 1
+                ? values[0]
+                : InitializerExpression(SyntaxKind.ComplexElementInitializerExpression, SeparatedList(values));
+        });
+        var creation = ObjectCreationExpression(theoryDataType)
+            .WithInitializer(InitializerExpression(SyntaxKind.CollectionInitializerExpression, SeparatedList(rows)));
+
+        return PropertyDeclaration(theoryDataType, dataName)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+            .WithExpressionBody(ArrowExpressionClause(creation))
+            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+    }
+
+    /// <summary>
+    /// [Theory] 属性を作る
+    /// </summary>
+    /// <returns>属性リスト</returns>
+    private static AttributeListSyntax TheoryAttribute()
+    {
+        return AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Theory"))));
+    }
+
+    /// <summary>
+    /// C# のキーワードと同じ名前の識別子に @ を付ける
+    /// </summary>
+    /// <param name="name">識別子</param>
+    /// <returns>エスケープした識別子</returns>
+    private static string EscapeIdentifier(string name)
+    {
+        return SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None ? name : "@" + name;
+    }
+
+    /// <summary>
+    /// テスト対象の呼び出し（new T(...) / T.M(...) / _sut.M(...)）を作る
+    /// </summary>
+    /// <param name="member">呼び出すメソッド・コンストラクタ</param>
+    /// <param name="arguments">引数リスト</param>
+    /// <returns>呼び出しの式</returns>
+    private ExpressionSyntax BuildCall(IMethodSymbol member, ArgumentListSyntax arguments)
+    {
         if (member.MethodKind == MethodKind.Constructor)
         {
             return ObjectCreationExpression(_renderer.RenderType(_targetType)).WithArgumentList(arguments);

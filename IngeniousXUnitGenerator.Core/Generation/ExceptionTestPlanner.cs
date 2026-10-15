@@ -1,7 +1,6 @@
 using IngeniousXUnitGenerator.Core.Guards;
 using IngeniousXUnitGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace IngeniousXUnitGenerator.Core.Generation;
 
@@ -10,71 +9,15 @@ namespace IngeniousXUnitGenerator.Core.Generation;
 /// </summary>
 internal sealed class ExceptionTestPlanner
 {
-    private readonly Compilation _compilation;
-    private readonly SutPlan _sut;
     private readonly List<string> _manualItems;
 
     /// <summary>
     /// 計画を立てる準備をする
     /// </summary>
-    /// <param name="compilation">対象のコンパイル</param>
-    /// <param name="sut">テスト対象のインスタンスの作り方</param>
     /// <param name="manualItems">要手動項目の追加先</param>
-    public ExceptionTestPlanner(Compilation compilation, SutPlan sut, List<string> manualItems)
+    public ExceptionTestPlanner(List<string> manualItems)
     {
-        _compilation = compilation;
-        _sut = sut;
         _manualItems = manualItems;
-    }
-
-    /// <summary>
-    /// メソッド・コンストラクタ1つ分の例外テストを計画する
-    /// </summary>
-    /// <param name="member">メソッド・コンストラクタ</param>
-    /// <returns>例外テストの一覧</returns>
-    public IReadOnlyList<ExceptionTestCase> Plan(IMethodSymbol member)
-    {
-        var declaration = MemberDisplay.FindDeclaration(member);
-        if (declaration is null) return [];
-
-        var guards = GuardExtractor.Extract(declaration, _compilation.GetSemanticModel(declaration.SyntaxTree), member);
-        var display = MemberDisplay.Of(member);
-        if (0 < guards.RemainingThrowCount)
-        {
-            _manualItems.Add($"{display}: ガードより後ろにある throw {guards.RemainingThrowCount} 件は、前提状態が分からないため対象外です");
-        }
-
-        if (guards.Statements.Count == 0) return [];
-
-        var blocker = FindBlocker(member, declaration);
-        if (blocker is not null)
-        {
-            _manualItems.Add($"{display}: {blocker}");
-            return [];
-        }
-
-        return PlanStatements(member, guards.Statements, display);
-    }
-
-    /// <summary>
-    /// メンバー全体として例外テストを作れない理由を探す
-    /// </summary>
-    /// <param name="member">メソッド・コンストラクタ</param>
-    /// <param name="declaration">宣言</param>
-    /// <returns>作れない理由（作れる場合はnull）</returns>
-    private string? FindBlocker(IMethodSymbol member, BaseMethodDeclarationSyntax declaration)
-    {
-        if (member.IsGenericMethod) return "ジェネリックメソッドは型引数を決められないため対象外です";
-        if (member.Parameters.Any(p => p.RefKind != RefKind.None)) return "ref / out / in 引数を持つメソッドは対象外です";
-        if (declaration.Body!.DescendantNodes().OfType<YieldStatementSyntax>().Any()) return "イテレーター（yield）は列挙するまでガードが動かないため対象外です";
-        if (member.IsAsync && member.ReturnsVoid) return "async void は例外を捕捉できないため対象外です";
-        if (member.MethodKind == MethodKind.Constructor && member.ContainingType.IsAbstract) return "抽象クラスのコンストラクタは直接呼べないため対象外です";
-        if (member.MethodKind == MethodKind.Ordinary && !member.IsStatic && _sut.Constructor is null)
-        {
-            return $"テスト対象のインスタンスを生成できないため対象外です（{_sut.Blocker}）";
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -84,7 +27,7 @@ internal sealed class ExceptionTestPlanner
     /// <param name="statements">ガード文</param>
     /// <param name="display">レポート用の表示名</param>
     /// <returns>例外テストの一覧</returns>
-    private List<ExceptionTestCase> PlanStatements(IMethodSymbol member, IReadOnlyList<GuardStatement> statements, string display)
+    public List<ExceptionTestCase> Plan(IMethodSymbol member, IReadOnlyList<GuardStatement> statements, string display)
     {
         var tests = new List<ExceptionTestCase>();
         for (var i = 0; i < statements.Count; i++)

@@ -17,6 +17,21 @@ public class Calculator
         return value;
     }
 
+    public string Judge(int score) => score switch
+    {
+        >= 80 => "合格",
+        >= 60 => "再試験",
+        _ => "不合格",
+    };
+
+    public decimal Discount(decimal price, bool member)
+    {
+        if (price < 0) throw new ArgumentOutOfRangeException(nameof(price));
+        var rate = member ? 0.9m : 1.0m;
+        if (price >= 10000) rate -= 0.05m;
+        return price * rate;
+    }
+
     public string Format(string label, int digits)
     {
         if (string.IsNullOrEmpty(label)) throw new ArgumentException("label is required", nameof(label));

@@ -72,23 +72,33 @@ internal static class TargetCompiler
     {
         var passed = new List<string>();
         var failures = new List<string>();
-        var facts = assembly.GetTypes()
+        var tests = assembly.GetTypes()
             .SelectMany(t => t.GetMethods())
-            .Where(m => m.GetCustomAttributes().Any(a => a.GetType().Name == "FactAttribute"));
+            .Where(m => m.GetCustomAttributes<FactAttribute>().Any());
 
-        foreach (var fact in facts)
+        foreach (var test in tests)
         {
-            try
+            // [Theory] は InlineData / MemberData の行ごとに実行する（xUnit と同じく引数の型は完全に一致させる）
+            var dataRows = test.GetCustomAttributes<Xunit.Sdk.DataAttribute>().SelectMany(d => d.GetData(test)).ToList();
+            var rows = dataRows.Count == 0 ? [null] : dataRows;
+            var failed = false;
+            foreach (var row in rows)
             {
-                var instance = Activator.CreateInstance(fact.DeclaringType!);
-                if (fact.Invoke(instance, null) is Task task) await task;
-                passed.Add(fact.Name);
+                try
+                {
+                    var instance = Activator.CreateInstance(test.DeclaringType!);
+                    if (test.Invoke(instance, row) is Task task) await task;
+                }
+                catch (Exception ex)
+                {
+                    var actual = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
+                    var arguments = row is null ? string.Empty : $"({string.Join(", ", row)})";
+                    failures.Add($"{test.Name}{arguments}: {actual.GetType().Name}: {actual.Message}");
+                    failed = true;
+                }
             }
-            catch (Exception ex)
-            {
-                var actual = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
-                failures.Add($"{fact.Name}: {actual.GetType().Name}: {actual.Message}");
-            }
+
+            if (!failed) passed.Add(test.Name);
         }
 
         Assert.True(failures.Count == 0, "生成したテストが失敗:\n" + string.Join("\n", failures) + "\n\n" + generatedCode);
