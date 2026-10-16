@@ -55,6 +55,23 @@ public static class TestDocumentWriter
     }
 
     /// <summary>
+    /// これから作るテストプロジェクト（Moq・Verify.Xunit を参照する）向けに、テストファイルの内容と置き場所を作る
+    /// </summary>
+    /// <param name="targetDocument">対象クラスがあるドキュメント</param>
+    /// <param name="targetType">テスト対象のクラス</param>
+    /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
+    /// <param name="testProjectName">テストプロジェクト名（既定の名前空間にもなる）</param>
+    /// <returns>テストプロジェクト内の相対パスと、テストファイルの内容</returns>
+    public static (string RelativePath, string Code) GenerateForNewProject(
+        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, string testProjectName)
+    {
+        var folders = targetDocument.Folders;
+        var testNamespace = string.Join(".", new[] { testProjectName }.Concat(folders).Where(s => 0 < s.Length));
+        var result = TestClassGenerator.Generate(targetType, compilation, testNamespace, new GenerationOptions(useMoq: true, useVerify: true));
+        return (Path.Combine([.. folders, result.TestClassName + ".cs"]), result.Code);
+    }
+
+    /// <summary>
     /// テストプロジェクトの既定の名前空間にフォルダ階層をつなげ、IDE0130（名前空間とフォルダの一致）に沿った名前空間を作る
     /// </summary>
     /// <param name="testProject">追加先のテストプロジェクト</param>

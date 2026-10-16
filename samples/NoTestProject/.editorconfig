@@ -1,0 +1,8 @@
+[*.cs]
+# サンプルでは TEST001（テストコードがないクラスの検知）を有効にする（既定では無効）
+dotnet_diagnostic.TEST001.severity = warning
+
+# サンプルを TEST001 の確認に絞るため、ほかのルールは止める
+dotnet_diagnostic.COMM001.severity = none
+dotnet_diagnostic.COMM002.severity = none
+dotnet_diagnostic.COMP001.severity = none
