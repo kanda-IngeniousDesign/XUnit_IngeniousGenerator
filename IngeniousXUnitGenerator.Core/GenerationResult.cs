@@ -12,12 +12,15 @@ public sealed class GenerationResult
     /// <param name="code">生成したテストファイルのソースコード</param>
     /// <param name="generatedTestCount">生成したテストの件数</param>
     /// <param name="manualItems">自動生成できず、人間の対応が必要な項目</param>
-    public GenerationResult(string testClassName, string code, int generatedTestCount, IReadOnlyList<string> manualItems)
+    /// <param name="notGeneratableItems">外部環境などに依存し、単体テストでは担保しない項目</param>
+    public GenerationResult(
+        string testClassName, string code, int generatedTestCount, IReadOnlyList<string> manualItems, IReadOnlyList<string> notGeneratableItems)
     {
         TestClassName = testClassName;
         Code = code;
         GeneratedTestCount = generatedTestCount;
         ManualItems = manualItems;
+        NotGeneratableItems = notGeneratableItems;
     }
 
     /// <summary>生成したテストクラス名（例: FooTests）</summary>
@@ -29,6 +32,9 @@ public sealed class GenerationResult
     /// <summary>生成したテストの件数</summary>
     public int GeneratedTestCount { get; }
 
-    /// <summary>自動生成できず、人間の対応が必要な項目（テストコードにもコメントで残す）</summary>
+    /// <summary>自動生成できず、人間の対応が必要な項目（テストコードにも「要手動」コメントで残す）</summary>
     public IReadOnlyList<string> ManualItems { get; }
+
+    /// <summary>時刻・乱数・外部環境に依存し、UIオーケストレーター側で担保する項目（「生成不可」コメントで残す）</summary>
+    public IReadOnlyList<string> NotGeneratableItems { get; }
 }

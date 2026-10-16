@@ -21,9 +21,15 @@ internal static class TargetCompiler
 
     public static CSharpCompilation Compile(params string[] sources)
     {
+        return Compile(sources.Select(s => CSharpSyntaxTree.ParseText(s, ParseOptions)).ToArray());
+    }
+
+    private static CSharpCompilation Compile(SyntaxTree[] trees)
+    {
+        var sources = trees.Select(t => t.ToString()).ToArray();
         var compilation = CSharpCompilation.Create(
-            "Target",
-            sources.Select(s => CSharpSyntaxTree.ParseText(s, ParseOptions)),
+            "Target" + Guid.NewGuid().ToString("N"),
+            trees,
             References,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
 
@@ -32,21 +38,25 @@ internal static class TargetCompiler
         return compilation;
     }
 
-    public static GenerationResult Generate(string targetSource, string metadataName, string? testNamespace = "Sample.Tests")
+    public static GenerationResult Generate(
+        string targetSource, string metadataName, string? testNamespace = "Sample.Tests", GenerationOptions? options = null)
     {
         var compilation = Compile(targetSource);
         var targetType = compilation.GetTypeByMetadataName(metadataName)
             ?? throw new InvalidOperationException($"{metadataName} が見つかりません。");
 
-        return TestClassGenerator.Generate(targetType, compilation, testNamespace);
+        return TestClassGenerator.Generate(targetType, compilation, testNamespace, options);
     }
 
     /// <summary>
     /// 対象と生成テストを一緒にビルドし、[Fact] をすべて実行して、成功したテスト名を返す（失敗があれば Assert で落とす）
     /// </summary>
-    public static async Task<IReadOnlyList<string>> RunGeneratedTestsAsync(string targetSource, string generatedCode)
+    /// <param name="generatedFilePath">生成テストのファイルパス（Verify はこのファイルの隣に記録を保存する）</param>
+    public static async Task<IReadOnlyList<string>> RunGeneratedTestsAsync(string targetSource, string generatedCode, string? generatedFilePath = null)
     {
-        var compilation = Compile(targetSource, generatedCode);
+        var compilation = Compile([
+            CSharpSyntaxTree.ParseText(targetSource, ParseOptions),
+            CSharpSyntaxTree.ParseText(generatedCode, ParseOptions, generatedFilePath ?? string.Empty, System.Text.Encoding.UTF8)]);
         var warnings = compilation.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Warning && d.Location.SourceTree == compilation.SyntaxTrees.Last())
             .ToList();
@@ -57,15 +67,9 @@ internal static class TargetCompiler
         Assert.True(emit.Success, string.Join("\n", emit.Diagnostics));
 
         stream.Position = 0;
-        var context = new AssemblyLoadContext(null, isCollectible: true);
-        try
-        {
-            return await RunFactsAsync(context.LoadFromStream(stream), generatedCode);
-        }
-        finally
-        {
-            context.Unload();
-        }
+        // Moq の動的プロキシは解放可能（collectible）なコンテキストを参照できないため、解放しないコンテキストに読み込む
+        var context = new AssemblyLoadContext(null, isCollectible: false);
+        return await RunFactsAsync(context.LoadFromStream(stream), generatedCode);
     }
 
     private static async Task<IReadOnlyList<string>> RunFactsAsync(Assembly assembly, string generatedCode)

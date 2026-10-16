@@ -63,7 +63,12 @@ public class GenerateTestClassRefactoring : CodeRefactoringProvider
 
         // 対象と同じフォルダ構成に置き、既に同名ファイルがあれば人間の編集を壊さないよう何もしない（マージは後続で実装）
         var folders = document.Folders;
-        var result = TestClassGenerator.Generate(targetType, compilation, BuildTestNamespace(testProject, folders));
+        // テストプロジェクトが Moq・Verify を参照していれば、モックと実行結果の記録を使う
+        var referencedAssemblies = testProject.MetadataReferences
+            .OfType<PortableExecutableReference>()
+            .Select(r => Path.GetFileNameWithoutExtension(r.FilePath ?? string.Empty));
+        var options = GenerationOptions.FromReferencedAssemblies(referencedAssemblies);
+        var result = TestClassGenerator.Generate(targetType, compilation, BuildTestNamespace(testProject, folders), options);
         var fileName = result.TestClassName + ".cs";
         if (testProject.Documents.Any(d => d.Name == fileName && d.Folders.SequenceEqual(folders))) return Task.FromResult(solution);
 

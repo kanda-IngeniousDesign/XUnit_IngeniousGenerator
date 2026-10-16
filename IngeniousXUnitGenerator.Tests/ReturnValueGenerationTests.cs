@@ -195,7 +195,9 @@ public class ReturnValueGenerationTests
 
         var result = TargetCompiler.Generate(source, "Sample.Target");
 
-        Assert.Equal(["Days(DateTime): 戻り値テスト: 型 DateTime は未対応です"], result.ManualItems);
+        var item = Assert.Single(result.ManualItems);
+        Assert.StartsWith("Days(DateTime): 戻り値テスト: 戻り値を静的に計算できません（引数 from の型 DateTime は計算の対象外）", item);
+        Assert.EndsWith("テストプロジェクトに Verify.Xunit を追加すると、実行結果を記録するテストを生成します", item);
     }
 
     private static async Task<Core.GenerationResult> GenerateAndRunAsync(string source, string metadataName)

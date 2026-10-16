@@ -15,6 +15,7 @@ public static class TestClassGenerator
     private const string TestClassSuffix = "Tests";
     private const string XUnitNamespace = "Xunit";
     private const string ManualPrefix = "// 要手動: ";
+    private const string NotGeneratablePrefix = "// 生成不可: ";
     private const string Indent = "    ";
 
     /// <summary>
@@ -23,13 +24,14 @@ public static class TestClassGenerator
     /// <param name="targetType">テスト対象のクラス</param>
     /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="testNamespace">テストクラスを置く名前空間（nullや空ならグローバル名前空間）</param>
+    /// <param name="options">テストプロジェクトで使えるパッケージに応じた設定（省略時は Moq・Verify を使わない）</param>
     /// <returns>生成結果</returns>
-    public static GenerationResult Generate(INamedTypeSymbol targetType, Compilation compilation, string? testNamespace)
+    public static GenerationResult Generate(INamedTypeSymbol targetType, Compilation compilation, string? testNamespace, GenerationOptions? options = null)
     {
         var testClassName = targetType.Name + TestClassSuffix;
         var renderer = new ValueRenderer();
-        var manualItems = new List<string>();
-        var tests = PlanTests(targetType, compilation, manualItems, out var sut);
+        var context = new GenerationContext(compilation, options ?? GenerationOptions.None);
+        var tests = PlanTests(targetType, context, out var sut);
 
         // 文字列連結ではなくSyntaxFactoryで組み立て、整形はRoslynに任せる
         var builder = new TestSyntaxBuilder(targetType, renderer);
@@ -49,29 +51,29 @@ public static class TestClassGenerator
             .AddMembers(WrapInNamespace(testNamespace, testClass))
             .NormalizeWhitespace(eol: "\r\n");
 
-        var formatted = Format(compilationUnit, manualItems);
-        return new GenerationResult(testClassName, formatted.ToFullString(), tests.Count, manualItems);
+        var comments = context.ManualItems.Select(i => ManualPrefix + i).Concat(context.NotGeneratableItems.Select(i => NotGeneratablePrefix + i)).ToList();
+        var formatted = Format(compilationUnit, comments);
+        return new GenerationResult(testClassName, formatted.ToFullString(), tests.Count, context.ManualItems, context.NotGeneratableItems);
     }
 
     /// <summary>
     /// クラス内の public なメソッド・コンストラクタから、例外テスト・戻り値テストを計画する
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
-    /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
-    /// <param name="manualItems">要手動項目の追加先</param>
+    /// <param name="context">生成の情報</param>
     /// <param name="sut">テスト対象のインスタンスの作り方</param>
     /// <returns>テストの一覧（テスト名の重複は除く）</returns>
     private static List<PlannedTest> PlanTests(
-        INamedTypeSymbol targetType, Compilation compilation, List<string> manualItems, out SutPlan sut)
+        INamedTypeSymbol targetType, GenerationContext context, out SutPlan sut)
     {
-        sut = SutPlan.Create(targetType, compilation);
+        sut = SutPlan.Create(targetType, context);
         if (targetType.IsGenericType)
         {
-            manualItems.Add($"{targetType.Name}: ジェネリッククラスは型引数を決められないため対象外です");
+            context.ManualItems.Add($"{targetType.Name}: ジェネリッククラスは型引数を決められないため対象外です");
             return [];
         }
 
-        var planner = new MemberTestPlanner(compilation, sut, manualItems);
+        var planner = new MemberTestPlanner(context, sut);
         var candidates = targetType.GetMembers()
             .OfType<IMethodSymbol>()
             .Where(IsTestTarget)
@@ -84,7 +86,7 @@ public static class TestClassGenerator
         foreach (var test in candidates)
         {
             if (names.Add(test.TestName)) tests.Add(test);
-            else manualItems.Add($"{MemberDisplay.Of(test.Member)}: テスト名 {test.TestName} が重複するため生成していません");
+            else context.ManualItems.Add($"{MemberDisplay.Of(test.Member)}: テスト名 {test.TestName} が重複するため生成していません");
         }
 
         return tests;
@@ -135,12 +137,12 @@ public static class TestClassGenerator
     }
 
     /// <summary>
-    /// NormalizeWhitespace の結果に、メンバー間の空行・要手動コメント・末尾の改行を加える
+    /// NormalizeWhitespace の結果に、メンバー間の空行・要手動/生成不可コメント・末尾の改行を加える
     /// </summary>
     /// <param name="compilationUnit">整形済みのファイル</param>
-    /// <param name="manualItems">要手動項目</param>
+    /// <param name="comments">クラスの末尾に残すコメント（要手動・生成不可）</param>
     /// <returns>整形したファイル</returns>
-    private static CompilationUnitSyntax Format(CompilationUnitSyntax compilationUnit, IReadOnlyList<string> manualItems)
+    private static CompilationUnitSyntax Format(CompilationUnitSyntax compilationUnit, IReadOnlyList<string> comments)
     {
         // NormalizeWhitespace は null! を「null !」と出力するため、演算子の前の空白を取り除く
         compilationUnit = compilationUnit.ReplaceNodes(
@@ -158,16 +160,16 @@ public static class TestClassGenerator
         var members = testClass.Members.Select((m, i) => i == 0 || EndsWithBlankLine(testClass.Members[i - 1])
             ? m
             : m.WithLeadingTrivia(m.GetLeadingTrivia().Insert(0, CarriageReturnLineFeed)));
-        var comments = new List<SyntaxTrivia>();
-        if (0 < testClass.Members.Count && 0 < manualItems.Count) comments.Add(CarriageReturnLineFeed);
-        foreach (var item in manualItems)
+        var commentTrivia = new List<SyntaxTrivia>();
+        if (0 < testClass.Members.Count && 0 < comments.Count) commentTrivia.Add(CarriageReturnLineFeed);
+        foreach (var comment in comments)
         {
-            comments.AddRange([Whitespace(Indent), Comment(ManualPrefix + item), CarriageReturnLineFeed]);
+            commentTrivia.AddRange([Whitespace(Indent), Comment(comment), CarriageReturnLineFeed]);
         }
 
         var formattedClass = testClass
             .WithMembers(List(members))
-            .WithCloseBraceToken(testClass.CloseBraceToken.WithLeadingTrivia(comments));
+            .WithCloseBraceToken(testClass.CloseBraceToken.WithLeadingTrivia(commentTrivia));
 
         // file-scoped namespace の宣言とクラスの間に空行を入れる
         if (testClass.Parent is FileScopedNamespaceDeclarationSyntax)

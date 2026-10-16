@@ -13,10 +13,11 @@ public static class ValueSolver
     /// </summary>
     /// <param name="type">引数の型</param>
     /// <param name="conditions">その引数に対する、先に評価されるガードの条件</param>
+    /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
     /// <returns>有効な値（見つからなければnull）</returns>
-    public static TestValue? FindValid(ITypeSymbol type, IReadOnlyList<GuardCondition> conditions)
+    public static TestValue? FindValid(ITypeSymbol type, IReadOnlyList<GuardCondition> conditions, bool allowMocks)
     {
-        return GetCandidates(type, conditions)
+        return GetCandidates(type, conditions, allowMocks)
             .FirstOrDefault(v => IsRepresentable(v, type) && !conditions.Any(c => c.IsViolatedBy(v)));
     }
 
@@ -42,10 +43,12 @@ public static class ValueSolver
     /// </summary>
     /// <param name="type">引数の型</param>
     /// <param name="conditions">その引数に対するガードの条件</param>
+    /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
     /// <returns>値の候補</returns>
-    private static IEnumerable<TestValue> GetCandidates(ITypeSymbol type, IReadOnlyList<GuardCondition> conditions)
+    private static IEnumerable<TestValue> GetCandidates(ITypeSymbol type, IReadOnlyList<GuardCondition> conditions, bool allowMocks)
     {
         var candidate = GetNonNullCandidates(type, conditions);
+        if (allowMocks && IsMockable(type)) candidate = candidate.Append(TestValue.OfType(TestValueKind.Mock, type));
         return type.IsReferenceType || IsNullableValueType(type) ? candidate.Append(TestValue.Null) : candidate;
     }
 
@@ -122,6 +125,22 @@ public static class ValueSolver
             SpecialType.System_Int64 => long.MinValue <= number && number <= long.MaxValue,
             SpecialType.System_UInt64 => ulong.MinValue <= number && number <= ulong.MaxValue,
             SpecialType.System_Decimal or SpecialType.System_Single or SpecialType.System_Double => true,
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Moq でモックできる型（インターフェース、または引数なしコンストラクタを持つ抽象クラス）かを判定する
+    /// </summary>
+    /// <param name="type">判定する型</param>
+    /// <returns>モックできるならtrue</returns>
+    private static bool IsMockable(ITypeSymbol type)
+    {
+        return type switch
+        {
+            INamedTypeSymbol { TypeKind: TypeKind.Interface } => true,
+            INamedTypeSymbol { TypeKind: TypeKind.Class, IsAbstract: true, IsSealed: false } named =>
+                named.InstanceConstructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility is Accessibility.Public or Accessibility.Protected),
             _ => false,
         };
     }

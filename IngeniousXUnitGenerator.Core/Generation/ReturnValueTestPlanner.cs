@@ -6,23 +6,25 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace IngeniousXUnitGenerator.Core.Generation;
 
 /// <summary>
-/// 境界値の入力ごとに戻り値を静的に計算し、戻り値テストを計画する
+/// 戻り値テストを計画する（静的に計算できれば期待値をリテラルで書き、できなければ実行結果を Verify で記録する）
 /// </summary>
 internal sealed class ReturnValueTestPlanner
 {
-    private readonly List<string> _manualItems;
+    private const string TasksNamespace = "System.Threading.Tasks";
+
+    private readonly GenerationContext _context;
 
     /// <summary>
     /// 計画を立てる準備をする
     /// </summary>
-    /// <param name="manualItems">要手動項目の追加先</param>
-    public ReturnValueTestPlanner(List<string> manualItems)
+    /// <param name="context">生成の情報</param>
+    public ReturnValueTestPlanner(GenerationContext context)
     {
-        _manualItems = manualItems;
+        _context = context;
     }
 
     /// <summary>
-    /// 型が戻り値テストの引数・戻り値として扱えるか（int, long, double, decimal, bool, string）を判定する
+    /// 型が境界値の入力・計算した期待値として扱えるか（int, long, double, decimal, bool, string）を判定する
     /// </summary>
     /// <param name="type">型</param>
     /// <returns>扱えるならtrue</returns>
@@ -41,39 +43,102 @@ internal sealed class ReturnValueTestPlanner
     /// <param name="guards">先頭のガード</param>
     /// <param name="display">レポート用の表示名</param>
     /// <returns>戻り値テスト（作らない場合はnull）</returns>
-    public ReturnValueTestCase? Plan(
-        IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, string display)
+    public PlannedTest? Plan(IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, string display)
     {
-        if (member.MethodKind != MethodKind.Ordinary || member.ReturnsVoid) return null;
+        if (member.MethodKind != MethodKind.Ordinary || member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType)) return null;
 
-        var unsupported = new[] { member.ReturnType }.Concat(member.Parameters.Select(p => p.Type)).FirstOrDefault(t => !IsSupportedType(t));
-        if (unsupported is not null) return Manual(display, $"型 {unsupported.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)} は未対応です");
-
-        var inputs = BoundaryInputGenerator.Generate(member, declaration, model, guards);
-        if (inputs is null) return Manual(display, "ガードを通過する引数の値を決められません");
-
-        var rows = new List<(IReadOnlyList<object?>, object?)>(inputs.Count);
-        foreach (var input in inputs)
+        var external = ExternalDependencyDetector.Find(declaration, model);
+        if (external is not null)
         {
-            var result = MethodInterpreter.Evaluate(declaration, model, member, input);
-            switch (result.Kind)
-            {
-                case EvaluationKind.Unsupported:
-                    return Manual(display, $"戻り値を静的に計算できません（{result.Reason}）");
-                case EvaluationKind.Returned when result.Value is null:
-                    return Manual(display, "null を返す入力があります");
-                case EvaluationKind.Returned when result.Value is double d && (double.IsNaN(d) || double.IsInfinity(d)):
-                    return Manual(display, "NaN または無限大を返す入力があります");
-                case EvaluationKind.Returned:
-                    rows.Add((input, result.Value));
-                    break;
-            }
-
-            // 例外になる入力は、例外テストの対象のため戻り値テストには含めない
+            _context.NotGeneratableItems.Add($"{display}: {external}、単体テストでは担保しません（UIオーケストレーター側で確認）");
+            return null;
         }
 
-        if (rows.Count == 0) return null;
-        return new ReturnValueTestCase(member, $"{MemberDisplay.GetTestName(member)}_BoundaryValues_ReturnsExpected", rows);
+        var inputs = BoundaryInputGenerator.Generate(member, declaration, model, guards, _context.Options.UseMoq, out var failedParameter);
+        if (inputs is null)
+        {
+            var hint = _context.Options.UseMoq ? string.Empty : "。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします";
+            return Manual(display, $"引数 {failedParameter!.Name} の値を作れません{hint}");
+        }
+
+        var reason = GetStaticReason(member, inputs);
+        if (reason is null)
+        {
+            var computed = TryCompute(member, declaration, model, inputs, out reason);
+            if (computed is not null || reason is null) return computed;
+        }
+
+        if (!_context.Options.UseVerify)
+        {
+            return Manual(display, $"戻り値を静的に計算できません（{reason}）。テストプロジェクトに Verify.Xunit を追加すると、実行結果を記録するテストを生成します");
+        }
+
+        var testName = inputs.DataParameters.Count == 0
+            ? $"{MemberDisplay.GetTestName(member)}_DefaultInputs_MatchesSnapshot"
+            : $"{MemberDisplay.GetTestName(member)}_BoundaryValues_MatchesSnapshot";
+        return new SnapshotTestCase(member, testName, inputs);
+    }
+
+    /// <summary>
+    /// 静的な計算の対象外となる理由を返す（引数・戻り値の型で判断できるもの）
+    /// </summary>
+    /// <param name="member">メソッド</param>
+    /// <param name="inputs">テストの入力</param>
+    /// <returns>対象外の理由（計算を試せる場合はnull）</returns>
+    private static string? GetStaticReason(IMethodSymbol member, BoundaryInputs inputs)
+    {
+        if (0 < inputs.FixedValues.Count)
+        {
+            var parameter = inputs.FixedValues.Keys.First();
+            return $"引数 {parameter.Name} の型 {parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)} は計算の対象外";
+        }
+
+        if (!IsSupportedType(member.ReturnType)) return $"戻り値の型 {member.ReturnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}";
+        return null;
+    }
+
+    /// <summary>
+    /// 境界値の入力ごとに戻り値を静的に計算する
+    /// </summary>
+    /// <param name="member">メソッド</param>
+    /// <param name="declaration">メソッドの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="inputs">テストの入力（すべての引数が境界値の対象）</param>
+    /// <param name="reason">計算できない場合の理由（計算できた、またはすべて例外になった場合はnull）</param>
+    /// <returns>戻り値テスト（計算できない、またはすべて例外になった場合はnull）</returns>
+    private static ReturnValueTestCase? TryCompute(
+        IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, BoundaryInputs inputs, out string? reason)
+    {
+        var rows = new List<(IReadOnlyList<object?>, object?)>(inputs.Rows.Count);
+        foreach (var input in inputs.Rows)
+        {
+            var result = MethodInterpreter.Evaluate(declaration, model, member, input);
+            reason = result switch
+            {
+                { Kind: EvaluationKind.Unsupported } => result.Reason,
+                { Kind: EvaluationKind.Returned, Value: null } => "null を返す入力があります",
+                { Kind: EvaluationKind.Returned, Value: double d } when double.IsNaN(d) || double.IsInfinity(d) => "NaN または無限大を返す入力があります",
+                _ => null,
+            };
+            if (reason is not null) return null;
+
+            // 例外になる入力は、例外テストの対象のため戻り値テストには含めない
+            if (result.Kind == EvaluationKind.Returned) rows.Add((input, result.Value));
+        }
+
+        reason = null;
+        return rows.Count == 0 ? null : new ReturnValueTestCase(member, $"{MemberDisplay.GetTestName(member)}_BoundaryValues_ReturnsExpected", rows);
+    }
+
+    /// <summary>
+    /// 値を持たない Task / ValueTask かを判定する（記録する戻り値がない）
+    /// </summary>
+    /// <param name="type">戻り値の型</param>
+    /// <returns>値を持たない Task / ValueTask ならtrue</returns>
+    private static bool IsTaskWithoutResult(ITypeSymbol type)
+    {
+        return type is INamedTypeSymbol { Name: "Task" or "ValueTask", IsGenericType: false } named
+            && named.ContainingNamespace?.ToDisplayString() == TasksNamespace;
     }
 
     /// <summary>
@@ -82,9 +147,9 @@ internal sealed class ReturnValueTestPlanner
     /// <param name="display">レポート用の表示名</param>
     /// <param name="reason">理由</param>
     /// <returns>常にnull</returns>
-    private ReturnValueTestCase? Manual(string display, string reason)
+    private PlannedTest? Manual(string display, string reason)
     {
-        _manualItems.Add($"{display}: 戻り値テスト: {reason}");
+        _context.ManualItems.Add($"{display}: 戻り値テスト: {reason}");
         return null;
     }
 }

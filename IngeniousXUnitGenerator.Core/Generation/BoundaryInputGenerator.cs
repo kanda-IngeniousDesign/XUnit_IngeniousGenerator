@@ -14,39 +14,82 @@ internal static class BoundaryInputGenerator
     private const int MaxRows = 20;
 
     /// <summary>
-    /// 基準の入力と、引数を1つずつ境界値に変えた入力を作る
+    /// 数値・文字列・bool の引数は基準の値と境界値の組み合わせを、それ以外の引数は固定の値（モックなど）を作る
     /// </summary>
     /// <param name="member">メソッド</param>
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
     /// <param name="guards">先頭のガード</param>
-    /// <returns>入力の一覧（基準の値を作れない引数があればnull）</returns>
-    public static List<object?[]>? Generate(IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards)
+    /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
+    /// <param name="failedParameter">値を作れなかった引数</param>
+    /// <returns>入力（値を作れない引数があればnull）</returns>
+    public static BoundaryInputs? Generate(
+        IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, bool allowMocks, out IParameterSymbol? failedParameter)
     {
-        var guardConditions = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases).ToList();
+        // 先頭のガードに加えて、本体の途中で例外になる条件も避ける（スナップショットは生成時に実行して確かめられないため）
+        var guardConditions = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases)
+            .Concat(GuardExtractor.CollectThrowConditions(declaration, model, member))
+            .ToList();
         var boundaries = CollectBoundaryConstants(declaration, model, member);
 
-        var baseRow = new object?[member.Parameters.Length];
-        var variations = new List<object?>[member.Parameters.Length];
-        for (var i = 0; i < member.Parameters.Length; i++)
+        var dataParameters = new List<IParameterSymbol>();
+        var fixedValues = new Dictionary<IParameterSymbol, TestValue>(SymbolEqualityComparer.Default);
+        var baseRow = new List<object?>();
+        var variations = new List<List<object?>>();
+        foreach (var parameter in member.Parameters)
         {
-            var parameter = member.Parameters[i];
+            failedParameter = parameter;
             var conditions = guardConditions
                 .Where(c => SymbolEqualityComparer.Default.Equals(c.Parameter, parameter))
                 .Select(c => c.Condition)
                 .ToList();
+            if (!ReturnValueTestPlanner.IsSupportedType(parameter.Type))
+            {
+                var fixedValue = FindFixedValue(parameter.Type, conditions, allowMocks);
+                if (fixedValue is null) return null;
+                fixedValues[parameter] = fixedValue;
+                continue;
+            }
+
             var valid = FindBaseValue(parameter.Type, conditions);
             if (valid is null) return null;
 
-            baseRow[i] = ToClrValue(valid, parameter.Type);
-
-            // ThrowIfGreaterThan(value, 100) などのガードの定数も、通過する側の境界（100 など）として使う
+            dataParameters.Add(parameter);
+            baseRow.Add(ToClrValue(valid, parameter.Type));
             boundaries.TryGetValue(parameter, out var constants);
-            var guardConstants = conditions.Where(c => c.Kind == GuardConditionKind.Compare).Select(c => (object)c.Constant);
-            variations[i] = GetVariations(parameter.Type, [.. constants ?? [], .. guardConstants], conditions);
+            variations.Add(GetParameterVariations(parameter.Type, constants ?? [], conditions));
         }
 
-        return CombineOneAtATime(baseRow, variations);
+        failedParameter = null;
+        return new BoundaryInputs(dataParameters, fixedValues, CombineOneAtATime([.. baseRow], [.. variations]));
+    }
+
+    /// <summary>
+    /// 境界値を変えない引数（クラス・インターフェースなど）に渡す固定の値を選ぶ
+    /// </summary>
+    /// <param name="type">引数の型</param>
+    /// <param name="conditions">その引数のガード条件</param>
+    /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
+    /// <returns>固定の値（作れなければnull）</returns>
+    private static TestValue? FindFixedValue(ITypeSymbol type, List<GuardCondition> conditions, bool allowMocks)
+    {
+        // null を渡すと本体で NullReferenceException になりやすいため、null しか作れない引数は対象外にする
+        var value = ValueSolver.FindValid(type, conditions, allowMocks);
+        return value is null || value.Kind == TestValueKind.Null ? null : value;
+    }
+
+    /// <summary>
+    /// 本体で比べている定数と、ガードの定数から、引数の境界値を作る
+    /// </summary>
+    /// <param name="type">引数の型</param>
+    /// <param name="constants">本体でその引数と比べている定数</param>
+    /// <param name="conditions">その引数のガード条件</param>
+    /// <returns>境界値の候補</returns>
+    private static List<object?> GetParameterVariations(ITypeSymbol type, List<object> constants, List<GuardCondition> conditions)
+    {
+        // ThrowIfGreaterThan(value, 100) などのガードの定数も、通過する側の境界（100 など）として使う
+        var guardConstants = conditions.Where(c => c.Kind == GuardConditionKind.Compare).Select(c => (object)c.Constant);
+        return GetVariations(type, [.. constants, .. guardConstants], conditions);
     }
 
     /// <summary>
@@ -60,7 +103,7 @@ internal static class BoundaryInputGenerator
         var one = TestValue.FromNumber(1);
         if (ConditionParser.IsNumeric(type) && ValueSolver.IsRepresentable(one, type) && !conditions.Any(c => c.IsViolatedBy(one))) return one;
 
-        return ValueSolver.FindValid(type, conditions);
+        return ValueSolver.FindValid(type, conditions, allowMocks: false);
     }
 
     /// <summary>

@@ -34,6 +34,9 @@ public enum TestValueKind
 
     /// <summary>空の配列</summary>
     EmptyArray,
+
+    /// <summary>Moq のモック（new Mock&lt;T&gt;().Object）</summary>
+    Mock,
 }
 
 /// <summary>
@@ -67,7 +70,7 @@ public sealed class TestValue
     /// <summary>数値の値（Numberのとき）</summary>
     public decimal Number { get; }
 
-    /// <summary>生成する型（EnumMember・New・Default・EmptyArrayのとき）</summary>
+    /// <summary>生成する型（EnumMember・New・Default・EmptyArray・Mockのとき）</summary>
     public ITypeSymbol? Type { get; }
 
     /// <summary>
@@ -103,7 +106,7 @@ public sealed class TestValue
     }
 
     /// <summary>
-    /// 型を伴う値（列挙メンバー・new・default・空配列）を作る
+    /// 型を伴う値（列挙メンバー・new・default・空配列・モック）を作る
     /// </summary>
     /// <param name="kind">値の種類</param>
     /// <param name="type">生成する型</param>

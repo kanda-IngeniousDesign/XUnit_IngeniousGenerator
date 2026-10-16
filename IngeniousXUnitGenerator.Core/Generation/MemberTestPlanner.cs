@@ -9,25 +9,22 @@ namespace IngeniousXUnitGenerator.Core.Generation;
 /// </summary>
 internal sealed class MemberTestPlanner
 {
-    private readonly Compilation _compilation;
+    private readonly GenerationContext _context;
     private readonly SutPlan _sut;
-    private readonly List<string> _manualItems;
     private readonly ExceptionTestPlanner _exceptionPlanner;
     private readonly ReturnValueTestPlanner _returnValuePlanner;
 
     /// <summary>
     /// 計画を立てる準備をする
     /// </summary>
-    /// <param name="compilation">対象のコンパイル</param>
+    /// <param name="context">生成の情報</param>
     /// <param name="sut">テスト対象のインスタンスの作り方</param>
-    /// <param name="manualItems">要手動項目の追加先</param>
-    public MemberTestPlanner(Compilation compilation, SutPlan sut, List<string> manualItems)
+    public MemberTestPlanner(GenerationContext context, SutPlan sut)
     {
-        _compilation = compilation;
+        _context = context;
         _sut = sut;
-        _manualItems = manualItems;
-        _exceptionPlanner = new ExceptionTestPlanner(manualItems);
-        _returnValuePlanner = new ReturnValueTestPlanner(manualItems);
+        _exceptionPlanner = new ExceptionTestPlanner(context);
+        _returnValuePlanner = new ReturnValueTestPlanner(context);
     }
 
     /// <summary>
@@ -40,12 +37,12 @@ internal sealed class MemberTestPlanner
         var declaration = MemberDisplay.FindDeclaration(member);
         if (declaration is null) return [];
 
-        var model = _compilation.GetSemanticModel(declaration.SyntaxTree);
+        var model = _context.Compilation.GetSemanticModel(declaration.SyntaxTree);
         var guards = GuardExtractor.Extract(declaration, model, member);
         var display = MemberDisplay.Of(member);
         if (0 < guards.RemainingThrowCount)
         {
-            _manualItems.Add($"{display}: ガードより後ろにある throw {guards.RemainingThrowCount} 件は、前提状態が分からないため例外テストの対象外です");
+            _context.ManualItems.Add($"{display}: ガードより後ろにある throw {guards.RemainingThrowCount} 件は、前提状態が分からないため例外テストの対象外です");
         }
 
         var hasReturnValue = member.MethodKind == MethodKind.Ordinary && !member.ReturnsVoid;
@@ -54,7 +51,7 @@ internal sealed class MemberTestPlanner
         var blocker = FindBlocker(member, declaration);
         if (blocker is not null)
         {
-            _manualItems.Add($"{display}: {blocker}");
+            _context.ManualItems.Add($"{display}: {blocker}");
             return [];
         }
 

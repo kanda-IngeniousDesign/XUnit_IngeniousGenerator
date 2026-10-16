@@ -36,6 +36,25 @@ public static class GuardExtractor
     }
 
     /// <summary>
+    /// 本体のどこにあっても、例外を投げる条件が読み取れるもの（if-throw と ThrowIf～）をすべて集める
+    /// （先頭のガードに限らないため例外テストには使わず、境界値から「例外になる値」を外すために使う）
+    /// </summary>
+    /// <param name="declaration">メソッド・コンストラクタの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド・コンストラクタのシンボル</param>
+    /// <returns>例外を投げる条件</returns>
+    public static IReadOnlyList<GuardCase> CollectThrowConditions(BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member)
+    {
+        var statements = declaration.DescendantNodes().Select(n => n switch
+        {
+            IfStatementSyntax ifStatement => TryParseIfThrow(ifStatement, model, member),
+            ExpressionStatementSyntax { Expression: InvocationExpressionSyntax invocation } => ThrowHelperParser.TryParse(invocation, model, member),
+            _ => null,
+        });
+        return statements.Where(s => s is { IsRecognized: true }).SelectMany(s => s!.Cases).ToList();
+    }
+
+    /// <summary>
     /// 文がガードならガード文として解析する
     /// </summary>
     /// <param name="statement">解析する文</param>

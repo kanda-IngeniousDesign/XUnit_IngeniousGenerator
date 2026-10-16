@@ -98,6 +98,7 @@ public sealed class ValueRenderer
                 SyntaxKind.SimpleMemberAccessExpression, RenderType(value.Type!), IdentifierName(value.Text)),
             TestValueKind.New => ObjectCreationExpression(RenderType(value.Type!)).WithArgumentList(ArgumentList()),
             TestValueKind.Default => DefaultExpression(RenderType(value.Type!)),
+            TestValueKind.Mock => RenderMock(value.Type!),
             _ => RenderEmptyArray((IArrayTypeSymbol)value.Type!),
         };
     }
@@ -174,6 +175,21 @@ public sealed class ValueRenderer
         if (magnitude <= uint.MaxValue) return Literal(text, (uint)magnitude);
         if (magnitude <= long.MaxValue) return Literal(text, (long)magnitude);
         return Literal(text, (ulong)magnitude);
+    }
+
+    /// <summary>
+    /// 何も設定しないモック new Mock&lt;T&gt;().Object を作る（戻り値は既定値になる）
+    /// </summary>
+    /// <param name="type">モックする型</param>
+    /// <returns>式の構文</returns>
+    private ExpressionSyntax RenderMock(ITypeSymbol type)
+    {
+        AddNamespace("Moq");
+        var mockType = GenericName("Mock").WithTypeArgumentList(TypeArgumentList(SingletonSeparatedList(RenderType(type))));
+        return MemberAccessExpression(
+            SyntaxKind.SimpleMemberAccessExpression,
+            ObjectCreationExpression(mockType).WithArgumentList(ArgumentList()),
+            IdentifierName("Object"));
     }
 
     /// <summary>

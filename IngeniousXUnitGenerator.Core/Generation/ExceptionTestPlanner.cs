@@ -9,15 +9,15 @@ namespace IngeniousXUnitGenerator.Core.Generation;
 /// </summary>
 internal sealed class ExceptionTestPlanner
 {
-    private readonly List<string> _manualItems;
+    private readonly GenerationContext _context;
 
     /// <summary>
     /// 計画を立てる準備をする
     /// </summary>
-    /// <param name="manualItems">要手動項目の追加先</param>
-    public ExceptionTestPlanner(List<string> manualItems)
+    /// <param name="context">生成の情報</param>
+    public ExceptionTestPlanner(GenerationContext context)
     {
-        _manualItems = manualItems;
+        _context = context;
     }
 
     /// <summary>
@@ -34,7 +34,7 @@ internal sealed class ExceptionTestPlanner
         {
             if (!statements[i].IsRecognized)
             {
-                _manualItems.Add($"{display}: 条件 '{statements[i].UnrecognizedText}' を解析できないため、これ以降のガードは対象外です");
+                _context.ManualItems.Add($"{display}: 条件 '{statements[i].UnrecognizedText}' を解析できないため、これ以降のガードは対象外です");
                 break;
             }
 
@@ -77,10 +77,10 @@ internal sealed class ExceptionTestPlanner
             }
 
             // 他の引数は、対象のガードまでに評価される条件をすべて通過する値にする
-            var valid = ValueSolver.FindValid(parameter.Type, GetConditionsUpTo(statements, index, parameter));
+            var valid = ValueSolver.FindValid(parameter.Type, GetConditionsUpTo(statements, index, parameter), _context.Options.UseMoq);
             if (valid is null)
             {
-                _manualItems.Add($"{display}: 引数 {parameter.Name} の有効な値を決められないため、{target.Name} の{violating.ConditionName}のテストは対象外です");
+                _context.ManualItems.Add($"{display}: 引数 {parameter.Name} の有効な値を決められないため、{target.Name} の{violating.ConditionName}のテストは対象外です");
                 return null;
             }
 

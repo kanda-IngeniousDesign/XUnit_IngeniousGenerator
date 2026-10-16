@@ -193,7 +193,7 @@ public class ExceptionTestGenerationTests
         Assert.Equal(["Constructor_ClockIsNull_ThrowsArgumentNullException"], passed);
         Assert.Equal(
             [
-                "Run(int, int): テスト対象のインスタンスを生成できないため対象外です（ガードを通過する引数を決められるpublicコンストラクタがないため（モックは未対応））",
+                "Run(int, int): テスト対象のインスタンスを生成できないため対象外です（ガードを通過する引数を決められるpublicコンストラクタがないため。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします）",
                 "Stop(int): ガードより後ろにある throw 1 件は、前提状態が分からないため例外テストの対象外です",
             ],
             result.ManualItems);

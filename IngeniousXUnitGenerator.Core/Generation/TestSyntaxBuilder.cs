@@ -128,44 +128,114 @@ internal sealed class TestSyntaxBuilder
             .AddParameterListParameters([.. parameters])
             .WithBody(Block(assertion));
 
-        // decimal は属性の引数に書けないため、TheoryData のプロパティから渡す
-        var usesDecimal = member.Parameters.Select(p => p.Type).Append(member.ReturnType).Any(t => t.SpecialType == SpecialType.System_Decimal);
-        if (!usesDecimal)
+        var columnTypes = member.Parameters.Select(p => p.Type).Append(member.ReturnType).ToList();
+        var rows = test.Rows.Select(r => r.Inputs.Append(r.Expected).ToList()).ToList();
+        return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_BoundaryValues", columnTypes, rows);
+    }
+
+    /// <summary>
+    /// スナップショットテスト（実行結果を Verify で記録し、2回目以降は記録と比較する）を作る
+    /// </summary>
+    /// <param name="test">スナップショットテストの内容</param>
+    /// <returns>テストメソッド（decimal を含む場合はテストデータのプロパティも）</returns>
+    public IEnumerable<MemberDeclarationSyntax> BuildSnapshotTest(SnapshotTestCase test)
+    {
+        var member = test.Member;
+        var inputs = test.Inputs;
+        var parameters = inputs.DataParameters.Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)));
+
+        // 境界値を変える引数はテストの引数から、それ以外（モックなど）は固定の値を直接渡す
+        var withCast = MemberDisplay.HasSameArityOverload(member);
+        var arguments = ArgumentList(SeparatedList(member.Parameters.Select(p => Argument(inputs.FixedValues.TryGetValue(p, out var fixedValue)
+            ? _renderer.Render(fixedValue, p.Type, withCast)
+            : IdentifierName(EscapeIdentifier(p.Name))))));
+
+        ExpressionSyntax verify = InvocationExpression(
+            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("Verifier"), IdentifierName("Verify")),
+            ArgumentList(SingletonSeparatedList(Argument(BuildCall(member, arguments)))));
+        if (0 < inputs.DataParameters.Count)
         {
-            var inlineData = test.Rows.Select(r => AttributeList(SingletonSeparatedList(Attribute(
+            // 入力ごとに別のファイルへ記録する
+            verify = InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, verify, IdentifierName("UseParameters")),
+                ArgumentList(SeparatedList(inputs.DataParameters.Select(p => Argument(IdentifierName(EscapeIdentifier(p.Name)))))));
+        }
+
+        // 記録がまだない初回だけ自動で記録し、2回目以降は記録との違いを失敗として検出する。
+        // CI（ビルドサーバー）では自動記録せず、記録のコミット漏れを失敗として検出する。
+        // 引数をすべて名前付きで渡すのは、古いコンパイラでオーバーロードが曖昧にならないようにするため
+        var firstRunOnly = SimpleLambdaExpression(
+            Parameter(Identifier("verifiedFile")),
+            PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("File"), IdentifierName("Exists")),
+                ArgumentList(SingletonSeparatedList(Argument(IdentifierName("verifiedFile")))))));
+        var autoVerify = InvocationExpression(
+            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, verify, IdentifierName("AutoVerify")),
+            ArgumentList(SeparatedList([
+                Argument(firstRunOnly),
+                Argument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameColon(NameColon("includeBuildServer")),
+                Argument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameColon(NameColon("throwException"))])));
+
+        _renderer.AddNamespace("VerifyXunit");
+        _renderer.AddNamespace("System.IO");
+        _renderer.AddNamespace(TasksNamespace);
+        var method = MethodDeclaration(IdentifierName("Task"), test.TestName)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .AddParameterListParameters([.. parameters])
+            .WithBody(Block(ReturnStatement(autoVerify)));
+
+        if (inputs.DataParameters.Count == 0) return [method.AddAttributeLists(AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Fact")))))];
+
+        var rows = inputs.Rows.Select(r => (IReadOnlyList<object?>)r).ToList();
+        return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_SnapshotInputs", inputs.DataParameters.Select(p => p.Type).ToList(), rows);
+    }
+
+    /// <summary>
+    /// テストメソッドに [Theory] とデータ（InlineData、decimal を含む場合は TheoryData のプロパティ）を付ける
+    /// </summary>
+    /// <param name="method">テストメソッド</param>
+    /// <param name="dataName">TheoryData のプロパティ名</param>
+    /// <param name="columnTypes">データの列の型</param>
+    /// <param name="rows">データの行</param>
+    /// <returns>テストメソッド（と、必要ならテストデータのプロパティ）</returns>
+    private IEnumerable<MemberDeclarationSyntax> WithTheoryData(
+        MethodDeclarationSyntax method, string dataName, IReadOnlyList<ITypeSymbol> columnTypes, IReadOnlyList<IReadOnlyList<object?>> rows)
+    {
+        // decimal は属性の引数に書けないため、TheoryData のプロパティから渡す
+        if (!columnTypes.Any(t => t.SpecialType == SpecialType.System_Decimal))
+        {
+            var inlineData = rows.Select(r => AttributeList(SingletonSeparatedList(Attribute(
                 IdentifierName("InlineData"),
-                AttributeArgumentList(SeparatedList(r.Inputs.Append(r.Expected).Select(v => AttributeArgument(ValueRenderer.RenderClrValue(v)))))))));
+                AttributeArgumentList(SeparatedList(r.Select(v => AttributeArgument(ValueRenderer.RenderClrValue(v)))))))));
             return [method.AddAttributeLists([TheoryAttribute(), .. inlineData])];
         }
 
-        var dataName = MemberDisplay.GetTestName(member) + "_BoundaryValues";
         var memberData = AttributeList(SingletonSeparatedList(Attribute(
             IdentifierName("MemberData"),
             AttributeArgumentList(SingletonSeparatedList(AttributeArgument(
                 InvocationExpression(IdentifierName("nameof"), ArgumentList(SingletonSeparatedList(Argument(IdentifierName(dataName)))))))))));
-        return [BuildTheoryData(test, dataName), method.AddAttributeLists(TheoryAttribute(), memberData)];
+        return [BuildTheoryData(dataName, columnTypes, rows), method.AddAttributeLists(TheoryAttribute(), memberData)];
     }
 
     /// <summary>
-    /// public static TheoryData&lt;...&gt; 名前 =&gt; new TheoryData&lt;...&gt; { { 入力..., 期待値 }, ... }; を作る
+    /// public static TheoryData&lt;...&gt; 名前 =&gt; new TheoryData&lt;...&gt; { { 値, ... }, ... }; を作る
     /// </summary>
-    /// <param name="test">戻り値テストの内容</param>
     /// <param name="dataName">プロパティ名</param>
+    /// <param name="columnTypes">データの列の型</param>
+    /// <param name="rows">データの行</param>
     /// <returns>プロパティの宣言</returns>
-    private PropertyDeclarationSyntax BuildTheoryData(ReturnValueTestCase test, string dataName)
+    private PropertyDeclarationSyntax BuildTheoryData(string dataName, IReadOnlyList<ITypeSymbol> columnTypes, IReadOnlyList<IReadOnlyList<object?>> rows)
     {
-        var typeArguments = test.Member.Parameters.Select(p => p.Type).Append(test.Member.ReturnType).Select(_renderer.RenderType);
-        var theoryDataType = GenericName("TheoryData").WithTypeArgumentList(TypeArgumentList(SeparatedList(typeArguments)));
-
-        var rows = test.Rows.Select(r =>
+        var theoryDataType = GenericName("TheoryData").WithTypeArgumentList(TypeArgumentList(SeparatedList(columnTypes.Select(_renderer.RenderType))));
+        var elements = rows.Select(r =>
         {
-            var values = r.Inputs.Append(r.Expected).Select(ValueRenderer.RenderClrValue).ToList();
+            var values = r.Select(ValueRenderer.RenderClrValue).ToList();
             return values.Count == 1
                 ? values[0]
                 : InitializerExpression(SyntaxKind.ComplexElementInitializerExpression, SeparatedList(values));
         });
         var creation = ObjectCreationExpression(theoryDataType)
-            .WithInitializer(InitializerExpression(SyntaxKind.CollectionInitializerExpression, SeparatedList(rows)));
+            .WithInitializer(InitializerExpression(SyntaxKind.CollectionInitializerExpression, SeparatedList(elements)));
 
         return PropertyDeclaration(theoryDataType, dataName)
             .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))

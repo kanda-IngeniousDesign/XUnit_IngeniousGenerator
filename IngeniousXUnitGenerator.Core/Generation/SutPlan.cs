@@ -29,9 +29,9 @@ internal sealed class SutPlan
     /// ガードをすべて通過できるコンストラクタを、引数の少ない順に探す
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
-    /// <param name="compilation">対象のコンパイル</param>
+    /// <param name="context">生成の情報</param>
     /// <returns>Sutの作り方</returns>
-    public static SutPlan Create(INamedTypeSymbol targetType, Compilation compilation)
+    public static SutPlan Create(INamedTypeSymbol targetType, GenerationContext context)
     {
         if (targetType.IsStatic) return Blocked("staticクラスのため");
         if (targetType.IsAbstract) return Blocked("抽象クラスは具象サブクラスが必要なため");
@@ -41,11 +41,13 @@ internal sealed class SutPlan
             .OrderBy(c => c.Parameters.Length);
         foreach (var constructor in constructors)
         {
-            var arguments = TryCreateArguments(constructor, compilation);
+            var arguments = TryCreateArguments(constructor, context);
             if (arguments is not null) return new SutPlan(constructor, arguments, null);
         }
 
-        return Blocked("ガードを通過する引数を決められるpublicコンストラクタがないため（モックは未対応）");
+        return Blocked(context.Options.UseMoq
+            ? "ガードを通過する引数を決められるpublicコンストラクタがないため"
+            : "ガードを通過する引数を決められるpublicコンストラクタがないため。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします");
     }
 
     /// <summary>
@@ -62,15 +64,15 @@ internal sealed class SutPlan
     /// コンストラクタのガードをすべて通過する引数を求める
     /// </summary>
     /// <param name="constructor">コンストラクタ</param>
-    /// <param name="compilation">対象のコンパイル</param>
+    /// <param name="context">生成の情報</param>
     /// <returns>引数の値（ガードを解析できない、または有効な値がない場合はnull）</returns>
-    private static List<(TestValue, ITypeSymbol)>? TryCreateArguments(IMethodSymbol constructor, Compilation compilation)
+    private static List<(TestValue, ITypeSymbol)>? TryCreateArguments(IMethodSymbol constructor, GenerationContext context)
     {
         var conditions = new List<GuardCase>();
         var declaration = MemberDisplay.FindDeclaration(constructor);
         if (declaration is not null)
         {
-            var guards = GuardExtractor.Extract(declaration, compilation.GetSemanticModel(declaration.SyntaxTree), constructor);
+            var guards = GuardExtractor.Extract(declaration, context.Compilation.GetSemanticModel(declaration.SyntaxTree), constructor);
             if (guards.Statements.Any(s => !s.IsRecognized)) return null;
             conditions.AddRange(guards.Statements.SelectMany(s => s.Cases));
         }
@@ -82,7 +84,7 @@ internal sealed class SutPlan
                 .Where(c => SymbolEqualityComparer.Default.Equals(c.Parameter, parameter))
                 .Select(c => c.Condition)
                 .ToList();
-            var value = ValueSolver.FindValid(parameter.Type, parameterConditions);
+            var value = ValueSolver.FindValid(parameter.Type, parameterConditions, context.Options.UseMoq);
             if (value is null) return null;
             arguments.Add((value, parameter.Type));
         }
