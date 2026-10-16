@@ -1,6 +1,5 @@
 <Solution>
   <Project Path="IngeniousXUnitGenerator.Core/IngeniousXUnitGenerator.Core.csproj" />
-  <Project Path="IngeniousXUnitGenerator.Analyzers/IngeniousXUnitGenerator.Analyzers.csproj" />
   <Project Path="IngeniousXUnitGenerator.Cli/IngeniousXUnitGenerator.Cli.csproj" />
   <Project Path="IngeniousXUnitGenerator.Tests/IngeniousXUnitGenerator.Tests.csproj" />
 </Solution>

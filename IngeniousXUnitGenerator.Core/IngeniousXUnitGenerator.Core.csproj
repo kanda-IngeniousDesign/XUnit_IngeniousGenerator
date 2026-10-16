@@ -4,11 +4,15 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>IngeniousXUnitGenerator.Core</RootNamespace>
-    <IsPackable>false</IsPackable>
+    <PackageId>IngeniousXUnitGenerator.Core</PackageId>
+    <Version>0.1.0-dev</Version>
+    <Description>C#のクラスから、xUnitのテストコードをRoslynだけで決定的に生成するライブラリです（CSharp_IngeniousAnalyzer のテスト生成で使用）。</Description>
+    <IsPackable>true</IsPackable>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" PrivateAssets="all" />
     <PackageReference Include="CSharp_IngeniousAnalyzer" Version="3.4.0" PrivateAssets="all" />
   </ItemGroup>
 

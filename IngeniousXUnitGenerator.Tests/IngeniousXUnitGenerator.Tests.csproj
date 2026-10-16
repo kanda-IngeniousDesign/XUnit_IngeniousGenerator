@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.21.0" />
     <PackageReference Include="Verify.Xunit" Version="31.12.5" />
@@ -20,7 +21,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IngeniousXUnitGenerator.Core\IngeniousXUnitGenerator.Core.csproj" />
-    <ProjectReference Include="..\IngeniousXUnitGenerator.Analyzers\IngeniousXUnitGenerator.Analyzers.csproj" />
   </ItemGroup>
 
 </Project>
