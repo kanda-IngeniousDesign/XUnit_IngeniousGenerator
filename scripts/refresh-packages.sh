@@ -8,17 +8,17 @@ ROOT=${0:A:h:h}
 ANALYZER=${ROOT:h}/CSharp_IngeniousAnalyzer
 OUT=$ROOT/artifacts/packages
 
-dotnet pack "$ROOT/IngeniousXUnitGenerator.Core" -c Release -o "$OUT" | grep -E "error|Successfully"
+dotnet pack "$ROOT/IngeniousXUnitGenerator.Core" -c Release -o "$OUT" | { grep -E "error|Successfully" || true; }
 rm -rf ~/.nuget/packages/ingeniousxunitgenerator.core/0.1.0-dev ~/.nuget/packages/csharp_ingeniousanalyzer/3.5.0-dev
 
 # dotnet pack だけでは古いビルドの dll が同梱されることがあるため、Release でビルドしてから --no-build で作る
-dotnet build "$ANALYZER/CSharp_IngeniousAnalyzer.csproj" -c Release | grep -E "error|Error\(s\)"
-dotnet pack "$ANALYZER/CSharp_IngeniousAnalyzer.csproj" -c Release --no-build -o "$OUT" | grep -E "error|Successfully"
+dotnet build "$ANALYZER/CSharp_IngeniousAnalyzer.csproj" -c Release | { grep -E "error|Error\(s\)" || true; }
+dotnet pack "$ANALYZER/CSharp_IngeniousAnalyzer.csproj" -c Release --no-build -o "$OUT" | { grep -E "error|Successfully" || true; }
 
 for sample in "$ROOT"/samples/*/; do
   rm -rf "$sample/.packages"
   for solution in "$sample"/*.slnx; do
-    dotnet restore "$solution" | grep -E "error|Restored"
+    dotnet restore "$solution" | { grep -E "error|Restored" || true; }
   done
 done
 echo "完了: VS Code を開き直す（Developer: Reload Window）と、新しいアナライザーが読み込まれます"
