@@ -86,7 +86,6 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 これから:
 
 - 例外が出ないことの確認（生成不可のメソッドに対する最低限のテスト）は未実装。
-- VS Code では、ホバーの「クイック フィックス」から作成の Fix が出ない（Cmd+. や電球アイコンからは出る）。Fix は毎回登録されており、VS Code 側の絞り込みが原因。条件は未調査。
 - 再生成・マージ（既存の XxxTests.cs への追加）、「このメソッドのみ生成」は未実装。
 - NuGet 公開前に、Windows 版 Visual Studio で、作成の Fix（独自の操作で csproj 作成と dotnet sln add まで行う）を確認する。
 - 公開前に IngeniousXUnitGenerator.Core を nuget.org に公開する（CSharp_IngeniousAnalyzer はローカルの Core を参照する nuget.config を持っているため、そのままでは GitHub 上のビルドが通らない）。
@@ -96,6 +95,7 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 - Roslyn の言語サーバー（VS Code）は、コード修正の操作のうち ApplyChangesOperation しか反映しない（独自の CodeActionOperation はログに "Skipping" と出して読み飛ばす）。そのため、テストプロジェクトの作成は、VS では独自の操作（ファイル作成と dotnet sln add）、VS Code では追加ファイル（AdditionalDocument）として csproj とテストファイルを作らせる（ソリューションへの追加だけ手動、コマンドを Fix のタイトルとテストファイル先頭のコメントで案内）。判定はワークスペースの型名（`.LanguageServer.` を含むか）で行う。
 - VS Code（C# Dev Kit）の Solution.FilePath は、Dev Kit が内部で生成したソリューション（workspaceStorage 内）を指す。利用者のソリューションは、プロダクトのプロジェクトから上へたどって探す。
 - targets の AdditionalFiles を「テストプロジェクトのフォルダがあれば」という条件で囲むと、後から作ったテストプロジェクトを IDE が監視せず、警告が消えない。条件を付けずに常に登録する。
+- 言語サーバーは同じタイトルのアクションを1つにまとめる。範囲を選んだ要求（ホバーの「クイック フィックス」）ではリファクタリングが先に並ぶため、Fix とリファクタリングが同じタイトルだと、クイックフィックスの一覧から Fix が消える。Fix とリファクタリングのタイトルは必ず変える。
 - VS Code は同じ名前・同じバージョンのアナライザーを1つしか読み込まない。開発中は `scripts/refresh-packages.sh` で全サンプルを同じビルドにそろえる。
 6. クラス単位の生成の仕上げ（既存ファイルとのマージ、「このメソッドのみ生成」）。
 7. NuGet公開前に、Windows版Visual Studioで電球メニューを確認する。
