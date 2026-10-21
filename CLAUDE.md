@@ -81,9 +81,22 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 4. 戻り値のテスト（静的に計算できるもの）: 本体の比較・パターン・ガードの定数から境界値を作り、ツールがコードを解釈して期待値を計算する（int / long / double / decimal / bool / string、if・switch 式・三項・代入・一部の標準メソッド）。
 5. 戻り値のテスト（実行して記録するもの）: 静的に計算できない場合は Verify でスナップショットを記録する（初回だけ自動記録、CI では自動記録しない）。インターフェースの依存は Moq で自動モックする。テストプロジェクトが Verify.Xunit / Moq を参照している場合だけ使い、参照していなければ「要手動」に追加方法を書く。時刻・乱数・ファイル・DB などを直接使うメソッドは「生成不可」として報告する。
 
+6. TEST001（テストコードがないクラスの警告、既定は無効）と Fix・電球メニューを CSharp_IngeniousAnalyzer に実装（`feature/test001-missing-test` ブランチ）。テストプロジェクトがなければ Fix で作成する。VS Code で、警告 → 作成 → 警告が消える、テストがある場合の生成 → 警告が消える、生成したテストが dotnet test で成功、までを確認済み。
+
 これから:
 
 - 例外が出ないことの確認（生成不可のメソッドに対する最低限のテスト）は未実装。
+- VS Code では、ホバーの「クイック フィックス」から作成の Fix が出ない（Cmd+. や電球アイコンからは出る）。Fix は毎回登録されており、VS Code 側の絞り込みが原因。条件は未調査。
+- 再生成・マージ（既存の XxxTests.cs への追加）、「このメソッドのみ生成」は未実装。
+- NuGet 公開前に、Windows 版 Visual Studio で、作成の Fix（独自の操作で csproj 作成と dotnet sln add まで行う）を確認する。
+- 公開前に IngeniousXUnitGenerator.Core を nuget.org に公開する（CSharp_IngeniousAnalyzer はローカルの Core を参照する nuget.config を持っているため、そのままでは GitHub 上のビルドが通らない）。
+
+## IDE ごとの違い（実機で確認した事実）
+
+- Roslyn の言語サーバー（VS Code）は、コード修正の操作のうち ApplyChangesOperation しか反映しない（独自の CodeActionOperation はログに "Skipping" と出して読み飛ばす）。そのため、テストプロジェクトの作成は、VS では独自の操作（ファイル作成と dotnet sln add）、VS Code では追加ファイル（AdditionalDocument）として csproj とテストファイルを作らせる（ソリューションへの追加だけ手動、コマンドを Fix のタイトルとテストファイル先頭のコメントで案内）。判定はワークスペースの型名（`.LanguageServer.` を含むか）で行う。
+- VS Code（C# Dev Kit）の Solution.FilePath は、Dev Kit が内部で生成したソリューション（workspaceStorage 内）を指す。利用者のソリューションは、プロダクトのプロジェクトから上へたどって探す。
+- targets の AdditionalFiles を「テストプロジェクトのフォルダがあれば」という条件で囲むと、後から作ったテストプロジェクトを IDE が監視せず、警告が消えない。条件を付けずに常に登録する。
+- VS Code は同じ名前・同じバージョンのアナライザーを1つしか読み込まない。開発中は `scripts/refresh-packages.sh` で全サンプルを同じビルドにそろえる。
 6. クラス単位の生成の仕上げ（既存ファイルとのマージ、「このメソッドのみ生成」）。
 7. NuGet公開前に、Windows版Visual Studioで電球メニューを確認する。
 8. CLIは、CIでの利用など必要になった時点で着手する。
