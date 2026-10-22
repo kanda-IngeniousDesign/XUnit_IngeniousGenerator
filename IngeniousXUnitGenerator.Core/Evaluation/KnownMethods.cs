@@ -30,7 +30,8 @@ internal static class KnownMethods
             }
 
             // null のメソッド呼び出しは実行時に NullReferenceException になる
-            var text = evaluate(receiver.Expression) as string ?? throw new GuestThrowException();
+            var text = evaluate(receiver.Expression) as string
+                ?? throw new GuestThrowException(null, "System.NullReferenceException", null, invocation);
             return StringMethods.Invoke(text, method, invocation, model, evaluate);
         }
 
@@ -64,7 +65,9 @@ internal static class KnownMethods
         if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol { Name: "Length", ContainingType.SpecialType: SpecialType.System_String })
         {
             // null の Length は実行時に NullReferenceException になる
-            return evaluate(memberAccess.Expression) is string s ? s.Length : throw new GuestThrowException();
+            return evaluate(memberAccess.Expression) is string s
+                ? s.Length
+                : throw new GuestThrowException(null, "System.NullReferenceException", null, memberAccess);
         }
 
         throw new UnsupportedSyntaxException($"メンバー '{memberAccess}' の参照");

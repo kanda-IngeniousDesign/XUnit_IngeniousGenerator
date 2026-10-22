@@ -59,14 +59,15 @@ public sealed class MethodInterpreter
         {
             return EvaluationResult.Unsupported(ex.Message);
         }
-        catch (GuestThrowException)
+        catch (GuestThrowException ex)
         {
-            return EvaluationResult.Threw;
+            var type = ex.ExceptionType ?? (ex.ExceptionTypeName is null ? null : model.Compilation.GetTypeByMetadataName(ex.ExceptionTypeName));
+            return EvaluationResult.Threw(type, ex.ParamName, ex.Site);
         }
-        catch (ArithmeticException)
+        catch (ArithmeticException ex)
         {
             // ゼロ除算・decimal のオーバーフローなど、実行時にも例外になる演算
-            return EvaluationResult.Threw;
+            return EvaluationResult.Threw(model.Compilation.GetTypeByMetadataName(ex.GetType().FullName!), null, null);
         }
     }
 
@@ -104,8 +105,8 @@ public sealed class MethodInterpreter
                 return Flow.Return;
             case IfStatementSyntax ifStatement:
                 return ExecuteIf(ifStatement);
-            case ThrowStatementSyntax:
-                throw new GuestThrowException();
+            case ThrowStatementSyntax throwStatement:
+                throw CreateThrow(throwStatement.Expression, throwStatement);
             case ExpressionStatementSyntax expressionStatement:
                 ExecuteExpressionStatement(expressionStatement.Expression);
                 return Flow.Normal;
@@ -249,7 +250,10 @@ public sealed class MethodInterpreter
 
         foreach (var guardCase in guard.Cases)
         {
-            if (guardCase.Condition.IsViolatedBy(ToTestValue(_variables[guardCase.Parameter]))) throw new GuestThrowException();
+            if (guardCase.Condition.IsViolatedBy(ToTestValue(_variables[guardCase.Parameter])))
+            {
+                throw new GuestThrowException(guardCase.ExceptionType, null, guardCase.ParamName, invocation);
+            }
         }
     }
 
@@ -317,7 +321,7 @@ public sealed class MethodInterpreter
             MemberAccessExpressionSyntax memberAccess => KnownMethods.ReadMember(memberAccess, _model, EvaluateConverted),
             SwitchExpressionSyntax switchExpression => EvaluateSwitch(switchExpression),
             IsPatternExpressionSyntax isPattern => new PatternMatcher(_model).Matches(isPattern.Pattern, EvaluateConverted(isPattern.Expression)),
-            ThrowExpressionSyntax => throw new GuestThrowException(),
+            ThrowExpressionSyntax throwExpression => throw CreateThrow(throwExpression.Expression, throwExpression),
             InterpolatedStringExpressionSyntax => throw new UnsupportedSyntaxException("文字列補間（カルチャに依存するため）"),
             _ => throw new UnsupportedSyntaxException($"式 '{Shorten(expression)}'"),
         };
@@ -387,7 +391,21 @@ public sealed class MethodInterpreter
             if (matcher.Matches(arm.Pattern, value)) return EvaluateConverted(arm.Expression);
         }
 
-        throw new GuestThrowException();
+        throw new GuestThrowException(null, "System.Runtime.CompilerServices.SwitchExpressionException", null, switchExpression);
+    }
+
+    /// <summary>
+    /// throw の式から、例外の型と ParamName を持つ例外を作る（new 以外の throw は型が分からないものとして扱う）
+    /// </summary>
+    /// <param name="thrown">throw する式</param>
+    /// <param name="site">throw 文・throw 式</param>
+    /// <returns>評価中のコードの例外</returns>
+    private GuestThrowException CreateThrow(ExpressionSyntax? thrown, SyntaxNode site)
+    {
+        if (thrown is not ObjectCreationExpressionSyntax creation) return new GuestThrowException(null, null, null, site);
+
+        var type = _model.GetTypeInfo(creation).Type as INamedTypeSymbol;
+        return new GuestThrowException(type, null, ParamNameResolver.Resolve(creation, _model), site);
     }
 
     /// <summary>

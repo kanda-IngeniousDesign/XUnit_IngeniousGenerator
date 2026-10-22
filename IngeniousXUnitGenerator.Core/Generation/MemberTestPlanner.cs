@@ -13,6 +13,7 @@ internal sealed class MemberTestPlanner
     private readonly SutPlan _sut;
     private readonly ExceptionTestPlanner _exceptionPlanner;
     private readonly ReturnValueTestPlanner _returnValuePlanner;
+    private readonly LaterThrowTestPlanner _laterThrowPlanner;
 
     /// <summary>
     /// 計画を立てる準備をする
@@ -25,6 +26,7 @@ internal sealed class MemberTestPlanner
         _sut = sut;
         _exceptionPlanner = new ExceptionTestPlanner(context);
         _returnValuePlanner = new ReturnValueTestPlanner(context);
+        _laterThrowPlanner = new LaterThrowTestPlanner(context);
     }
 
     /// <summary>
@@ -40,11 +42,6 @@ internal sealed class MemberTestPlanner
         var model = _context.Compilation.GetSemanticModel(declaration.SyntaxTree);
         var guards = GuardExtractor.Extract(declaration, model, member);
         var display = MemberDisplay.Of(member);
-        if (0 < guards.RemainingThrowCount)
-        {
-            _context.ManualItems.Add($"{display}: ガードより後ろにある throw {guards.RemainingThrowCount} 件は、前提状態が分からないため例外テストの対象外です");
-        }
-
         // メソッドは戻り値の有無にかかわらず、戻り値テスト・例外が出ないことの確認の対象にする
         if (guards.Statements.Count == 0 && member.MethodKind != MethodKind.Ordinary) return [];
 
@@ -56,6 +53,7 @@ internal sealed class MemberTestPlanner
         }
 
         var tests = new List<PlannedTest>(_exceptionPlanner.Plan(member, guards.Statements, display));
+        tests.AddRange(_laterThrowPlanner.Plan(member, declaration, model, guards, display));
         var returnValueTest = _returnValuePlanner.Plan(member, declaration, model, guards, display);
         if (returnValueTest is not null) tests.Add(returnValueTest);
         return tests;

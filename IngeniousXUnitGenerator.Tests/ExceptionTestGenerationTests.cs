@@ -194,10 +194,10 @@ public class ExceptionTestGenerationTests
         Assert.Equal(
             [
                 "Run(int, int): テスト対象のインスタンスを生成できないため対象外です（ガードを通過する引数を決められるpublicコンストラクタがないため。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします）",
-                "Stop(int): ガードより後ろにある throw 1 件は、前提状態が分からないため例外テストの対象外です",
+                "Stop(int): ガードより後ろにある throw 1 件は、そこに到達する入力を求められないため例外テストの対象外です",
             ],
             result.ManualItems);
-        Assert.Contains("    // 要手動: Stop(int): ガードより後ろにある throw 1 件は、前提状態が分からないため例外テストの対象外です", result.Code);
+        Assert.Contains("    // 要手動: Stop(int): ガードより後ろにある throw 1 件は、そこに到達する入力を求められないため例外テストの対象外です", result.Code);
     }
 
     [Fact]

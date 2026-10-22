@@ -53,10 +53,10 @@ internal static class StringMethods
                 _ => throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'"),
             };
         }
-        catch (ArgumentException)
+        catch (ArgumentException ex)
         {
             // Substring の範囲外などは、実行時にも例外になる
-            throw new GuestThrowException();
+            throw new GuestThrowException(null, ex.GetType().FullName, ex.ParamName, invocation);
         }
     }
 

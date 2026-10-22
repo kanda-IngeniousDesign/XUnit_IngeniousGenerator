@@ -23,14 +23,15 @@ internal static class BoundaryInputGenerator
     /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
     /// <param name="varyCollections">コレクションを空・null にも変えるか（スナップショットでは記録ファイル名が重なるため変えない）</param>
     /// <param name="failedParameter">値を作れなかった引数</param>
+    /// <param name="avoidBodyThrows">本体の途中で例外になる値も避けるか（false なら先頭のガードだけを避け、途中の throw に到達する入力も作る）</param>
     /// <returns>入力（値を作れない引数があればnull）</returns>
     public static BoundaryInputs? Generate(
         IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, bool allowMocks, bool varyCollections,
-        out IParameterSymbol? failedParameter)
+        out IParameterSymbol? failedParameter, bool avoidBodyThrows = true)
     {
         // 先頭のガードに加えて、本体の途中で例外になる条件も避ける（スナップショットは生成時に実行して確かめられないため）
-        var guardConditions = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases)
-            .Concat(GuardExtractor.CollectThrowConditions(declaration, model, member))
+        var leadingGuards = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases);
+        var guardConditions = (avoidBodyThrows ? leadingGuards.Concat(GuardExtractor.CollectThrowConditions(declaration, model, member)) : leadingGuards)
             .ToList();
         var boundaries = CollectBoundaryConstants(declaration, model, member);
 

@@ -52,12 +52,47 @@ internal sealed class TestSyntaxBuilder
     /// <returns>テストメソッドの宣言</returns>
     public MethodDeclarationSyntax BuildExceptionTest(ExceptionTestCase test)
     {
-        var awaitKind = GetAwaitKind(test.Member);
+        var arguments = BuildArguments(test.Member, test.Arguments);
+        return BuildThrowsTest(test.Member, test.TestName, test.ExceptionType, test.ParamName, arguments);
+    }
+
+    /// <summary>
+    /// 静的な評価で例外になると分かった入力の例外テストを作る（入力はテストデータの値をそのまま渡す）
+    /// </summary>
+    /// <param name="test">例外テストの内容</param>
+    /// <returns>テストメソッドの宣言</returns>
+    public MethodDeclarationSyntax BuildComputedExceptionTest(ComputedExceptionTestCase test)
+    {
+        var withCast = MemberDisplay.HasSameArityOverload(test.Member);
+        var arguments = ArgumentList(SeparatedList(test.Member.Parameters.Select((p, i) =>
+        {
+            // null 非許容の引数にも渡せるよう、null は null! にする
+            var value = test.Inputs[i] is null
+                ? PostfixUnaryExpression(SyntaxKind.SuppressNullableWarningExpression, LiteralExpression(SyntaxKind.NullLiteralExpression))
+                : _renderer.RenderData(test.Inputs[i]);
+            return Argument(withCast ? CastExpression(_renderer.RenderType(p.Type), value) : value);
+        })));
+        return BuildThrowsTest(test.Member, test.TestName, test.ExceptionType, test.ParamName, arguments);
+    }
+
+    /// <summary>
+    /// Assert.Throws（必要なら ParamName の確認も）を行うテストメソッドを作る
+    /// </summary>
+    /// <param name="member">テスト対象のメソッド・コンストラクタ</param>
+    /// <param name="testName">テストメソッド名</param>
+    /// <param name="exceptionType">期待する例外の型</param>
+    /// <param name="paramName">期待する ParamName（確定できなければnull）</param>
+    /// <param name="arguments">呼び出しの引数</param>
+    /// <returns>テストメソッドの宣言</returns>
+    private MethodDeclarationSyntax BuildThrowsTest(
+        IMethodSymbol member, string testName, INamedTypeSymbol exceptionType, string? paramName, ArgumentListSyntax arguments)
+    {
+        var awaitKind = GetAwaitKind(member);
         var isAsync = awaitKind != AwaitKind.None;
-        var assertion = BuildThrowsAssertion(test, awaitKind);
+        var assertion = BuildThrowsAssertion(member, exceptionType, arguments, awaitKind);
 
         var statements = new List<StatementSyntax>(2);
-        if (test.ParamName is not null && InheritsArgumentException(test.ExceptionType))
+        if (paramName is not null && InheritsArgumentException(exceptionType))
         {
             // ParamName まで確認し、別の引数のガードで同じ例外型が投げられた場合に誤って成功しないようにする
             statements.Add(LocalDeclarationStatement(VariableDeclaration(IdentifierName("var"))
@@ -65,7 +100,7 @@ internal sealed class TestSyntaxBuilder
             statements.Add(ExpressionStatement(InvocationExpression(
                 AssertMember(IdentifierName("Equal")),
                 ArgumentList(SeparatedList([
-                    Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(test.ParamName))),
+                    Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(paramName))),
                     Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("exception"), IdentifierName("ParamName")))])))));
         }
         else
@@ -76,7 +111,7 @@ internal sealed class TestSyntaxBuilder
         if (isAsync) _renderer.AddNamespace(TasksNamespace);
         var method = MethodDeclaration(
                 isAsync ? IdentifierName("Task") : PredefinedType(Token(SyntaxKind.VoidKeyword)),
-                test.TestName)
+                testName)
             .AddAttributeLists(AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Fact")))))
             .AddModifiers(Token(SyntaxKind.PublicKeyword))
             .WithBody(Block(statements));
@@ -87,12 +122,14 @@ internal sealed class TestSyntaxBuilder
     /// <summary>
     /// Assert.Throws&lt;T&gt;(() =&gt; ...) または await Assert.ThrowsAsync&lt;T&gt;(() =&gt; ...) を作る
     /// </summary>
-    /// <param name="test">例外テストの内容</param>
+    /// <param name="member">テスト対象のメソッド・コンストラクタ</param>
+    /// <param name="exceptionType">期待する例外の型</param>
+    /// <param name="arguments">呼び出しの引数</param>
     /// <param name="awaitKind">戻り値の待機の種類</param>
     /// <returns>アサーションの式</returns>
-    private ExpressionSyntax BuildThrowsAssertion(ExceptionTestCase test, AwaitKind awaitKind)
+    private ExpressionSyntax BuildThrowsAssertion(IMethodSymbol member, INamedTypeSymbol exceptionType, ArgumentListSyntax arguments, AwaitKind awaitKind)
     {
-        var call = BuildCall(test.Member, BuildArguments(test.Member, test.Arguments));
+        var call = BuildCall(member, arguments);
 
         // ValueTask は Func<Task> に渡せないため、async ラムダで待機して Task にする
         LambdaExpressionSyntax lambda = awaitKind == AwaitKind.ValueTask
@@ -100,7 +137,7 @@ internal sealed class TestSyntaxBuilder
             : ParenthesizedLambdaExpression(call);
 
         var throws = GenericName(awaitKind == AwaitKind.None ? "Throws" : "ThrowsAsync")
-            .WithTypeArgumentList(TypeArgumentList(SingletonSeparatedList(_renderer.RenderType(test.ExceptionType))));
+            .WithTypeArgumentList(TypeArgumentList(SingletonSeparatedList(_renderer.RenderType(exceptionType))));
         var invocation = InvocationExpression(AssertMember(throws), ArgumentList(SingletonSeparatedList(Argument(lambda))));
 
         return awaitKind == AwaitKind.None ? invocation : AwaitExpression(invocation);
