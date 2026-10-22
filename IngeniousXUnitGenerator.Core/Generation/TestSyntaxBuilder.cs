@@ -363,7 +363,7 @@ internal sealed class TestSyntaxBuilder
     }
 
     /// <summary>
-    /// テスト対象の呼び出し（new T(...) / T.M(...) / _sut.M(...)）を作る
+    /// テスト対象の呼び出し（new T(...) / T.M(...) / _sut.M(...) / _sut.P = value）を作る
     /// </summary>
     /// <param name="member">呼び出すメソッド・コンストラクタ</param>
     /// <param name="arguments">引数リスト</param>
@@ -376,6 +376,15 @@ internal sealed class TestSyntaxBuilder
         }
 
         ExpressionSyntax receiver = member.IsStatic ? _renderer.RenderType(_targetType) : IdentifierName(SutFieldName);
+        if (member is { MethodKind: MethodKind.PropertySet, AssociatedSymbol: { } property })
+        {
+            // set アクセサーは、ただ1つの引数（value）を代入する
+            return AssignmentExpression(
+                SyntaxKind.SimpleAssignmentExpression,
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, receiver, IdentifierName(property.Name)),
+                arguments.Arguments[0].Expression);
+        }
+
         return InvocationExpression(
             MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, receiver, IdentifierName(member.Name)),
             arguments);
@@ -410,7 +419,7 @@ internal sealed class TestSyntaxBuilder
     /// <returns>待機の種類</returns>
     private static AwaitKind GetAwaitKind(IMethodSymbol member)
     {
-        if (member.MethodKind == MethodKind.Constructor) return AwaitKind.None;
+        if (member.MethodKind is MethodKind.Constructor or MethodKind.PropertySet) return AwaitKind.None;
 
         var returnType = member.ReturnType.OriginalDefinition;
         if (returnType.ContainingNamespace?.ToDisplayString() != TasksNamespace) return AwaitKind.None;

@@ -18,10 +18,37 @@ public static class GuardExtractor
     /// <returns>ガードの解析結果</returns>
     public static MemberGuards Extract(BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member)
     {
-        if (declaration.Body is null) return new MemberGuards([], 0);
+        return declaration.Body is null ? new MemberGuards([], 0) : ExtractFromBlock(declaration.Body, model, member);
+    }
 
+    /// <summary>
+    /// プロパティの set アクセサーの先頭から、ガードが続く限りガード文を抽出する
+    /// （式本体は「set =&gt; _x = value ?? throw ...」の形だけを対象にする）
+    /// </summary>
+    /// <param name="accessor">set アクセサーの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">set アクセサーのシンボル</param>
+    /// <returns>ガードの解析結果</returns>
+    public static MemberGuards ExtractAccessor(AccessorDeclarationSyntax accessor, SemanticModel model, IMethodSymbol member)
+    {
+        if (accessor.Body is not null) return ExtractFromBlock(accessor.Body, model, member);
+        if (accessor.ExpressionBody?.Expression is not AssignmentExpressionSyntax assignment) return new MemberGuards([], 0);
+
+        var guard = TryParseCoalesceThrow(assignment, model, member);
+        return guard is null ? new MemberGuards([], 0) : new MemberGuards([guard], 0);
+    }
+
+    /// <summary>
+    /// ブロックの先頭から、ガードが続く限りガード文を抽出する
+    /// </summary>
+    /// <param name="body">本体のブロック</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド・コンストラクタ・アクセサーのシンボル</param>
+    /// <returns>ガードの解析結果</returns>
+    private static MemberGuards ExtractFromBlock(BlockSyntax body, SemanticModel model, IMethodSymbol member)
+    {
         // ガード以外の文が来た時点で打ち切る（それ以降の throw は前提状態が分からないため確実なテストにできない）
-        var statements = declaration.Body.Statements;
+        var statements = body.Statements;
         var guards = new List<GuardStatement>();
         var index = 0;
         for (; index < statements.Count; index++)

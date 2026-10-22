@@ -15,18 +15,20 @@ internal static class MemberDisplay
     /// <returns>表示名</returns>
     public static string Of(IMethodSymbol member)
     {
+        if (member.MethodKind == MethodKind.PropertySet) return $"{GetName(member)}.set";
+
         var parameters = string.Join(", ", member.Parameters.Select(p => p.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
         return $"{GetName(member)}({parameters})";
     }
 
     /// <summary>
-    /// テスト名に使うメンバー名を返す（コンストラクタは Constructor）
+    /// テスト名に使うメンバー名を返す（コンストラクタは Constructor、set アクセサーはプロパティ名）
     /// </summary>
-    /// <param name="member">メソッド・コンストラクタ</param>
+    /// <param name="member">メソッド・コンストラクタ・set アクセサー</param>
     /// <returns>メンバー名</returns>
     public static string GetTestName(IMethodSymbol member)
     {
-        return member.MethodKind == MethodKind.Constructor ? "Constructor" : member.Name;
+        return member.MethodKind == MethodKind.Constructor ? "Constructor" : GetName(member);
     }
 
     /// <summary>
@@ -55,12 +57,17 @@ internal static class MemberDisplay
     }
 
     /// <summary>
-    /// 表示用のメンバー名を返す（コンストラクタは型名）
+    /// 表示用のメンバー名を返す（コンストラクタは型名、set アクセサーはプロパティ名）
     /// </summary>
-    /// <param name="member">メソッド・コンストラクタ</param>
+    /// <param name="member">メソッド・コンストラクタ・set アクセサー</param>
     /// <returns>メンバー名</returns>
     private static string GetName(IMethodSymbol member)
     {
-        return member.MethodKind == MethodKind.Constructor ? member.ContainingType.Name : member.Name;
+        return member switch
+        {
+            { MethodKind: MethodKind.Constructor } => member.ContainingType.Name,
+            { MethodKind: MethodKind.PropertySet, AssociatedSymbol: { } property } => property.Name,
+            _ => member.Name,
+        };
     }
 }

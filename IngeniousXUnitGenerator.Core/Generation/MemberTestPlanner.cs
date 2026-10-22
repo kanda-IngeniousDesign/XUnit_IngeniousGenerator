@@ -36,6 +36,8 @@ internal sealed class MemberTestPlanner
     /// <returns>テストの一覧</returns>
     public IReadOnlyList<PlannedTest> Plan(IMethodSymbol member)
     {
+        if (member.MethodKind == MethodKind.PropertySet) return PlanSetter(member);
+
         var declaration = MemberDisplay.FindDeclaration(member);
         if (declaration is null) return [];
 
@@ -57,6 +59,30 @@ internal sealed class MemberTestPlanner
         var returnValueTest = _returnValuePlanner.Plan(member, declaration, model, guards, display);
         if (returnValueTest is not null) tests.Add(returnValueTest);
         return tests;
+    }
+
+    /// <summary>
+    /// プロパティの set アクセサーの先頭のガードから、例外テストを計画する
+    /// （代入した値の確認は、前提状態や get との対応が分からないため対象外）
+    /// </summary>
+    /// <param name="member">set アクセサー</param>
+    /// <returns>テストの一覧</returns>
+    private IReadOnlyList<PlannedTest> PlanSetter(IMethodSymbol member)
+    {
+        var accessor = member.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).OfType<AccessorDeclarationSyntax>().FirstOrDefault();
+        if (accessor is null) return [];
+
+        var guards = GuardExtractor.ExtractAccessor(accessor, _context.Compilation.GetSemanticModel(accessor.SyntaxTree), member);
+        if (guards.Statements.Count == 0) return [];
+
+        var display = MemberDisplay.Of(member);
+        if (!member.IsStatic && _sut.Constructor is null)
+        {
+            _context.ManualItems.Add($"{display}: テスト対象のインスタンスを生成できないため対象外です（{_sut.Blocker}）");
+            return [];
+        }
+
+        return _exceptionPlanner.Plan(member, guards.Statements, display);
     }
 
     /// <summary>

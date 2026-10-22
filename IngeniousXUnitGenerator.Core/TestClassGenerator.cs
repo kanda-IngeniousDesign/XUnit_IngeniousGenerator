@@ -94,15 +94,17 @@ public static class TestClassGenerator
     }
 
     /// <summary>
-    /// テスト生成の対象となるメンバー（public なメソッド・コンストラクタ）かを判定する
+    /// テスト生成の対象となるメンバー（public なメソッド・コンストラクタ・プロパティの set アクセサー）かを判定する
+    /// （init アクセサーはオブジェクト初期化子でしか呼べないため対象外）
     /// </summary>
     /// <param name="member">メンバー</param>
     /// <returns>対象ならtrue</returns>
     private static bool IsTestTarget(IMethodSymbol member)
     {
-        return member.DeclaredAccessibility == Accessibility.Public
-            && !member.IsImplicitlyDeclared
-            && member.MethodKind is MethodKind.Ordinary or MethodKind.Constructor;
+        if (member.DeclaredAccessibility != Accessibility.Public || member.IsImplicitlyDeclared) return false;
+
+        return member.MethodKind is MethodKind.Ordinary or MethodKind.Constructor
+            || member is { MethodKind: MethodKind.PropertySet, IsInitOnly: false, AssociatedSymbol.DeclaredAccessibility: Accessibility.Public };
     }
 
     /// <summary>
