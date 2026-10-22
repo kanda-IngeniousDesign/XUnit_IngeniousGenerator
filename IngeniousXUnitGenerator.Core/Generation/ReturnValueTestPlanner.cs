@@ -45,20 +45,34 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>戻り値テスト（作らない場合はnull）</returns>
     public PlannedTest? Plan(IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, string display)
     {
-        if (member.MethodKind != MethodKind.Ordinary || member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType)) return null;
+        if (member.MethodKind != MethodKind.Ordinary) return null;
 
-        var external = ExternalDependencyDetector.Find(declaration, model);
-        if (external is not null)
+        // ファイル・DB・通信などは環境によって失敗するため、テストを作らずにUIオーケストレーター側へ回す
+        var dependency = ExternalDependencyDetector.Find(declaration, model);
+        if (dependency is { NonDeterministic: false })
         {
-            _context.NotGeneratableItems.Add($"{display}: {external}、単体テストでは担保しません（UIオーケストレーター側で確認）");
+            _context.NotGeneratableItems.Add($"{display}: {dependency.Value.Reason}、単体テストでは担保しません（UIオーケストレーター側で確認）");
             return null;
         }
 
+        // 戻り値がない、または時刻・乱数で戻り値が変わるメソッドは、境界値の入力で例外が出ないことだけを確かめる
+        var checksOnlyNoThrow = member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType) || dependency is not null;
         var inputs = BoundaryInputGenerator.Generate(member, declaration, model, guards, _context.Options.UseMoq, out var failedParameter);
         if (inputs is null)
         {
             var hint = _context.Options.UseMoq ? string.Empty : "。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします";
-            return Manual(display, $"引数 {failedParameter!.Name} の値を作れません{hint}");
+            return Manual(display, $"引数 {failedParameter!.Name} の値を作れません{hint}", checksOnlyNoThrow);
+        }
+
+        if (checksOnlyNoThrow)
+        {
+            if (dependency is not null)
+            {
+                _context.NotGeneratableItems.Add($"{display}: {dependency.Value.Reason}、戻り値は確認せず、例外が出ないことだけを確認します");
+            }
+
+            var suffix = inputs.DataParameters.Count == 0 ? "_DefaultInputs_DoesNotThrow" : "_BoundaryValues_DoesNotThrow";
+            return new NoThrowTestCase(member, MemberDisplay.GetTestName(member) + suffix, inputs);
         }
 
         var reason = GetStaticReason(member, inputs);
@@ -146,10 +160,12 @@ internal sealed class ReturnValueTestPlanner
     /// </summary>
     /// <param name="display">レポート用の表示名</param>
     /// <param name="reason">理由</param>
+    /// <param name="checksOnlyNoThrow">例外が出ないことの確認か（false なら戻り値テスト）</param>
     /// <returns>常にnull</returns>
-    private PlannedTest? Manual(string display, string reason)
+    private PlannedTest? Manual(string display, string reason, bool checksOnlyNoThrow = false)
     {
-        _context.ManualItems.Add($"{display}: 戻り値テスト: {reason}");
+        var kind = checksOnlyNoThrow ? "例外が出ないことの確認" : "戻り値テスト";
+        _context.ManualItems.Add($"{display}: {kind}: {reason}");
         return null;
     }
 }

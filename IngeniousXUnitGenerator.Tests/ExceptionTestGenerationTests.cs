@@ -219,8 +219,9 @@ public class ExceptionTestGenerationTests
 
         var result = TargetCompiler.Generate(source, "Sample.Validator");
 
-        Assert.Equal(1, result.GeneratedTestCount);
+        Assert.Equal(2, result.GeneratedTestCount);
         Assert.Contains("Check_AIsMinus1_ThrowsArgumentOutOfRangeException", result.Code);
+        Assert.Contains("Check_BoundaryValues_DoesNotThrow", result.Code);
         Assert.Equal(["Check(int, string): 条件 'a > 0 && b.Length > 3' を解析できないため、これ以降のガードは対象外です"], result.ManualItems);
     }
 

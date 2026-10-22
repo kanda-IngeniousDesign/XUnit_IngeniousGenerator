@@ -154,7 +154,7 @@ public sealed class SnapshotAndMockGenerationTests : IDisposable
     }
 
     [Fact]
-    public void Generate_TimeAndFileDependencies_ReportsNotGeneratable()
+    public async Task Generate_TimeAndFileDependencies_ChecksOnlyNoThrowForTimeAndSkipsFiles()
     {
         const string source = """
             using System;
@@ -169,16 +169,17 @@ public sealed class SnapshotAndMockGenerationTests : IDisposable
             """;
 
         var result = TargetCompiler.Generate(source, "Sample.Report", options: MoqAndVerify);
+        var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
 
-        Assert.Equal(0, result.GeneratedTestCount);
+        Assert.Equal(["Stamp_BoundaryValues_DoesNotThrow"], passed);
         Assert.Empty(result.ManualItems);
         Assert.Equal(
             [
-                "Stamp(string): 'Now' は実行するたびに結果が変わるため、単体テストでは担保しません（UIオーケストレーター側で確認）",
+                "Stamp(string): 'Now' は実行するたびに結果が変わるため、戻り値は確認せず、例外が出ないことだけを確認します",
                 "Load(string): 'File' は外部環境（ファイル・DB・通信など）に依存するため、単体テストでは担保しません（UIオーケストレーター側で確認）",
             ],
             result.NotGeneratableItems);
-        Assert.Contains("    // 生成不可: Stamp(string):", result.Code);
+        Assert.Contains("    // 生成不可: Load(string):", result.Code);
     }
 
     [Fact]

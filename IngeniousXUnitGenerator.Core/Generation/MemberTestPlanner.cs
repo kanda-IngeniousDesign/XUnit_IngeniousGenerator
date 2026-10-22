@@ -45,8 +45,8 @@ internal sealed class MemberTestPlanner
             _context.ManualItems.Add($"{display}: ガードより後ろにある throw {guards.RemainingThrowCount} 件は、前提状態が分からないため例外テストの対象外です");
         }
 
-        var hasReturnValue = member.MethodKind == MethodKind.Ordinary && !member.ReturnsVoid;
-        if (guards.Statements.Count == 0 && !hasReturnValue) return [];
+        // メソッドは戻り値の有無にかかわらず、戻り値テスト・例外が出ないことの確認の対象にする
+        if (guards.Statements.Count == 0 && member.MethodKind != MethodKind.Ordinary) return [];
 
         var blocker = FindBlocker(member, declaration);
         if (blocker is not null)

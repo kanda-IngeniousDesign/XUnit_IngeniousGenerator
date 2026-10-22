@@ -142,13 +142,8 @@ internal sealed class TestSyntaxBuilder
     {
         var member = test.Member;
         var inputs = test.Inputs;
-        var parameters = inputs.DataParameters.Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)));
-
-        // 境界値を変える引数はテストの引数から、それ以外（モックなど）は固定の値を直接渡す
-        var withCast = MemberDisplay.HasSameArityOverload(member);
-        var arguments = ArgumentList(SeparatedList(member.Parameters.Select(p => Argument(inputs.FixedValues.TryGetValue(p, out var fixedValue)
-            ? _renderer.Render(fixedValue, p.Type, withCast)
-            : IdentifierName(EscapeIdentifier(p.Name))))));
+        var parameters = BuildInputParameters(inputs);
+        var arguments = BuildInputArguments(member, inputs);
 
         ExpressionSyntax verify = InvocationExpression(
             MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("Verifier"), IdentifierName("Verify")),
@@ -188,6 +183,74 @@ internal sealed class TestSyntaxBuilder
 
         var rows = inputs.Rows.Select(r => (IReadOnlyList<object?>)r).ToList();
         return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_SnapshotInputs", inputs.DataParameters.Select(p => p.Type).ToList(), rows);
+    }
+
+    /// <summary>
+    /// 例外が出ないことのテスト（Record.Exception の結果が null であること）を作る
+    /// </summary>
+    /// <param name="test">例外が出ないことのテストの内容</param>
+    /// <returns>テストメソッド（decimal を含む場合はテストデータのプロパティも）</returns>
+    public IEnumerable<MemberDeclarationSyntax> BuildNoThrowTest(NoThrowTestCase test)
+    {
+        var member = test.Member;
+        var inputs = test.Inputs;
+        var call = BuildCall(member, BuildInputArguments(member, inputs));
+        var awaitKind = GetAwaitKind(member);
+        var isAsync = awaitKind != AwaitKind.None;
+
+        // ValueTask は Func<Task> に渡せないため、async ラムダで待機して Task にする
+        LambdaExpressionSyntax lambda = awaitKind == AwaitKind.ValueTask
+            ? ParenthesizedLambdaExpression(AwaitExpression(call)).WithAsyncKeyword(Token(SyntaxKind.AsyncKeyword))
+            : ParenthesizedLambdaExpression(call);
+        ExpressionSyntax record = InvocationExpression(
+            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("Record"), IdentifierName(isAsync ? "ExceptionAsync" : "Exception")),
+            ArgumentList(SingletonSeparatedList(Argument(lambda))));
+        if (isAsync) record = AwaitExpression(record);
+
+        var statements = new StatementSyntax[]
+        {
+            LocalDeclarationStatement(VariableDeclaration(IdentifierName("var"))
+                .AddVariables(VariableDeclarator("exception").WithInitializer(EqualsValueClause(record)))),
+            ExpressionStatement(InvocationExpression(
+                AssertMember(IdentifierName("Null")),
+                ArgumentList(SingletonSeparatedList(Argument(IdentifierName("exception")))))),
+        };
+
+        if (isAsync) _renderer.AddNamespace(TasksNamespace);
+        var method = MethodDeclaration(isAsync ? IdentifierName("Task") : PredefinedType(Token(SyntaxKind.VoidKeyword)), test.TestName)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .AddParameterListParameters([.. BuildInputParameters(inputs)])
+            .WithBody(Block(statements));
+        if (isAsync) method = method.AddModifiers(Token(SyntaxKind.AsyncKeyword));
+
+        if (inputs.DataParameters.Count == 0) return [method.AddAttributeLists(AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Fact")))))];
+
+        var rows = inputs.Rows.Select(r => (IReadOnlyList<object?>)r).ToList();
+        return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_NoThrowInputs", inputs.DataParameters.Select(p => p.Type).ToList(), rows);
+    }
+
+    /// <summary>
+    /// 境界値を変える引数を、テストメソッドの引数にする
+    /// </summary>
+    /// <param name="inputs">テストの入力</param>
+    /// <returns>テストメソッドの引数</returns>
+    private IEnumerable<ParameterSyntax> BuildInputParameters(BoundaryInputs inputs)
+    {
+        return inputs.DataParameters.Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)));
+    }
+
+    /// <summary>
+    /// 呼び出しの引数を作る（境界値を変える引数はテストの引数から、それ以外（モックなど）は固定の値を直接渡す）
+    /// </summary>
+    /// <param name="member">呼び出すメソッド</param>
+    /// <param name="inputs">テストの入力</param>
+    /// <returns>引数リスト</returns>
+    private ArgumentListSyntax BuildInputArguments(IMethodSymbol member, BoundaryInputs inputs)
+    {
+        var withCast = MemberDisplay.HasSameArityOverload(member);
+        return ArgumentList(SeparatedList(member.Parameters.Select(p => Argument(inputs.FixedValues.TryGetValue(p, out var fixedValue)
+            ? _renderer.Render(fixedValue, p.Type, withCast)
+            : IdentifierName(EscapeIdentifier(p.Name))))));
     }
 
     /// <summary>

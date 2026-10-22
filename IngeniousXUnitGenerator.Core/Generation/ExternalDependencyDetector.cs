@@ -30,8 +30,8 @@ internal static class ExternalDependencyDetector
     /// </summary>
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
-    /// <returns>見つかった理由（なければnull）</returns>
-    public static string? Find(BaseMethodDeclarationSyntax declaration, SemanticModel model)
+    /// <returns>見つかった処理（なければnull）。NonDeterministic は時刻・乱数など実行するたびに結果が変わるもの</returns>
+    public static (bool NonDeterministic, string Reason)? Find(BaseMethodDeclarationSyntax declaration, SemanticModel model)
     {
         foreach (var name in declaration.DescendantNodes().OfType<SimpleNameSyntax>())
         {
@@ -39,8 +39,8 @@ internal static class ExternalDependencyDetector
             if (symbol is null) continue;
 
             var fullName = GetFullName(symbol);
-            if (NonDeterministicMembers.Any(m => Matches(fullName, m))) return $"'{name}' は実行するたびに結果が変わるため";
-            if (ExternalPrefixes.Any(p => Matches(fullName, p))) return $"'{name}' は外部環境（ファイル・DB・通信など）に依存するため";
+            if (NonDeterministicMembers.Any(m => Matches(fullName, m))) return (true, $"'{name}' は実行するたびに結果が変わるため");
+            if (ExternalPrefixes.Any(p => Matches(fullName, p))) return (false, $"'{name}' は外部環境（ファイル・DB・通信など）に依存するため");
         }
 
         return null;
