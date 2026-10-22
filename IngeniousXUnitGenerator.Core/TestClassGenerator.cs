@@ -77,6 +77,7 @@ public static class TestClassGenerator
         var candidates = targetType.GetMembers()
             .OfType<IMethodSymbol>()
             .Where(IsTestTarget)
+            .Where(m => context.Options.OnlyMember is null || SymbolEqualityComparer.Default.Equals(m, context.Options.OnlyMember))
             .OrderBy(m => m.MethodKind == MethodKind.Constructor ? 0 : 1)
             .SelectMany(planner.Plan);
 

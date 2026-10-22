@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+
 namespace IngeniousXUnitGenerator.Core;
 
 /// <summary>
@@ -10,10 +12,12 @@ public sealed class GenerationOptions
     /// </summary>
     /// <param name="useMoq">インターフェースなどの依存を Moq でモックするか</param>
     /// <param name="useVerify">静的に計算できない戻り値を Verify で記録するか</param>
-    public GenerationOptions(bool useMoq, bool useVerify)
+    /// <param name="onlyMember">このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</param>
+    public GenerationOptions(bool useMoq, bool useVerify, IMethodSymbol? onlyMember = null)
     {
         UseMoq = useMoq;
         UseVerify = useVerify;
+        OnlyMember = onlyMember;
     }
 
     /// <summary>Moq も Verify も使わない設定</summary>
@@ -24,6 +28,19 @@ public sealed class GenerationOptions
 
     /// <summary>静的に計算できない戻り値を Verify で記録するか</summary>
     public bool UseVerify { get; }
+
+    /// <summary>このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</summary>
+    public IMethodSymbol? OnlyMember { get; }
+
+    /// <summary>
+    /// 指定のメソッド・コンストラクタのテストだけを生成する設定を作る
+    /// </summary>
+    /// <param name="member">メソッド・コンストラクタ（null ならクラス全体）</param>
+    /// <returns>生成の設定</returns>
+    public GenerationOptions WithOnlyMember(IMethodSymbol? member)
+    {
+        return new GenerationOptions(UseMoq, UseVerify, member);
+    }
 
     /// <summary>
     /// テストプロジェクトが参照しているアセンブリ名から、使えるパッケージを判定する

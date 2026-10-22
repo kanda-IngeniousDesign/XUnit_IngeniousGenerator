@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.Text;
 namespace IngeniousXUnitGenerator.Core;
 
 /// <summary>
-/// 生成したテストコードを、テストプロジェクトのドキュメントとしてソリューションに追加する
+/// 生成したテストコードを、テストプロジェクトのドキュメントとしてソリューションに追加・マージする
 /// （リファクタリング・コード修正のどちらからも使う）
 /// </summary>
 public static class TestDocumentWriter
@@ -20,38 +20,48 @@ public static class TestDocumentWriter
     /// <returns>既にあればtrue</returns>
     public static bool Exists(Project testProject, Document targetDocument, INamedTypeSymbol targetType)
     {
-        var fileName = targetType.Name + TestClassSuffix + ".cs";
-        return testProject.Documents.Any(d => d.Name == fileName && d.Folders.SequenceEqual(targetDocument.Folders));
+        return FindTestDocument(testProject, targetDocument, targetType) is not null;
     }
 
     /// <summary>
-    /// テストプロジェクトに、対象クラスのテストファイルを追加したソリューションを返す
-    /// （既に同名のファイルがあれば、人間の編集を壊さないよう何もしない）
+    /// テストプロジェクトに対象クラスのテストファイルを追加する。既にあれば、不足しているテストだけをマージする
+    /// （既存のテストメソッドは人間が編集している可能性があるため、追加も上書きもしない）
     /// </summary>
     /// <param name="targetDocument">対象クラスがあるドキュメント</param>
     /// <param name="targetType">テスト対象のクラス</param>
     /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="testProjectId">追加先のテストプロジェクト</param>
-    /// <returns>変更後のソリューション</returns>
-    public static Solution AddTestDocument(Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, ProjectId testProjectId)
+    /// <param name="onlyMember">このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</param>
+    /// <param name="cancellationToken">キャンセルトークン</param>
+    /// <returns>変更後のソリューション（追加するものがなければ元のまま）</returns>
+    public static async Task<Solution> AddOrMergeTestDocumentAsync(
+        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, ProjectId testProjectId, IMethodSymbol? onlyMember, CancellationToken cancellationToken)
     {
         var solution = targetDocument.Project.Solution;
         var testProject = solution.GetProject(testProjectId);
-        if (testProject is null || Exists(testProject, targetDocument, targetType)) return solution;
+        if (testProject is null) return solution;
 
         // テストプロジェクトが Moq・Verify を参照していれば、モックと実行結果の記録を使う
         var referencedAssemblies = testProject.MetadataReferences
             .OfType<PortableExecutableReference>()
             .Select(r => Path.GetFileNameWithoutExtension(r.FilePath ?? string.Empty));
-        var options = GenerationOptions.FromReferencedAssemblies(referencedAssemblies);
+        var options = GenerationOptions.FromReferencedAssemblies(referencedAssemblies).WithOnlyMember(onlyMember);
 
         // 対象と同じフォルダ構成に置く
         var folders = targetDocument.Folders;
         var result = TestClassGenerator.Generate(targetType, compilation, BuildTestNamespace(testProject, folders), options);
         var fileName = result.TestClassName + ".cs";
 
-        return solution.AddDocument(
-            DocumentId.CreateNewId(testProjectId), fileName, SourceText.From(result.Code), folders, BuildFilePath(testProject, folders, fileName));
+        var existing = FindTestDocument(testProject, targetDocument, targetType);
+        if (existing is null)
+        {
+            return solution.AddDocument(
+                DocumentId.CreateNewId(testProjectId), fileName, SourceText.From(result.Code), folders, BuildFilePath(testProject, folders, fileName));
+        }
+
+        var existingText = await existing.GetTextAsync(cancellationToken).ConfigureAwait(false);
+        var merged = TestFileMerger.Merge(existingText.ToString(), result.Code);
+        return merged is null ? solution : solution.WithDocumentText(existing.Id, SourceText.From(merged, existingText.Encoding));
     }
 
     /// <summary>
@@ -61,14 +71,28 @@ public static class TestDocumentWriter
     /// <param name="targetType">テスト対象のクラス</param>
     /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="testProjectName">テストプロジェクト名（既定の名前空間にもなる）</param>
+    /// <param name="onlyMember">このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</param>
     /// <returns>テストプロジェクト内の相対パスと、テストファイルの内容</returns>
     public static (string RelativePath, string Code) GenerateForNewProject(
-        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, string testProjectName)
+        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, string testProjectName, IMethodSymbol? onlyMember = null)
     {
         var folders = targetDocument.Folders;
         var testNamespace = string.Join(".", new[] { testProjectName }.Concat(folders).Where(s => 0 < s.Length));
-        var result = TestClassGenerator.Generate(targetType, compilation, testNamespace, new GenerationOptions(useMoq: true, useVerify: true));
+        var result = TestClassGenerator.Generate(targetType, compilation, testNamespace, new GenerationOptions(useMoq: true, useVerify: true, onlyMember));
         return (Path.Combine([.. folders, result.TestClassName + ".cs"]), result.Code);
+    }
+
+    /// <summary>
+    /// テストプロジェクトから、対象クラスのテストファイル（同じフォルダ構成の XxxTests.cs）を探す
+    /// </summary>
+    /// <param name="testProject">テストプロジェクト</param>
+    /// <param name="targetDocument">対象クラスがあるドキュメント</param>
+    /// <param name="targetType">テスト対象のクラス</param>
+    /// <returns>テストファイル（なければnull）</returns>
+    private static Document? FindTestDocument(Project testProject, Document targetDocument, INamedTypeSymbol targetType)
+    {
+        var fileName = targetType.Name + TestClassSuffix + ".cs";
+        return testProject.Documents.FirstOrDefault(d => d.Name == fileName && d.Folders.SequenceEqual(targetDocument.Folders));
     }
 
     /// <summary>
