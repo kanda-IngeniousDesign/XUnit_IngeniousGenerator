@@ -17,9 +17,21 @@ internal static class KnownMethods
     /// <returns>呼び出しの結果</returns>
     public static object? Invoke(InvocationExpressionSyntax invocation, SemanticModel model, Func<ExpressionSyntax, object?> evaluate)
     {
-        if (model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol { IsStatic: true } method)
+        if (model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method)
         {
             throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'");
+        }
+
+        if (!method.IsStatic)
+        {
+            if (method.ContainingType.SpecialType != SpecialType.System_String || invocation.Expression is not MemberAccessExpressionSyntax receiver)
+            {
+                throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'");
+            }
+
+            // null のメソッド呼び出しは実行時に NullReferenceException になる
+            var text = evaluate(receiver.Expression) as string ?? throw new GuestThrowException();
+            return StringMethods.Invoke(text, method, invocation, model, evaluate);
         }
 
         var arguments = invocation.ArgumentList.Arguments.Select(a => evaluate(a.Expression)).ToList();
@@ -30,6 +42,12 @@ internal static class KnownMethods
             ("System.Math", "Abs", 1) => Abs(arguments[0]),
             ("System.Math", "Max", 2) => ClrOperations.CompareNumbers(arguments[0]!, arguments[1]!) < 0 ? arguments[1] : arguments[0],
             ("System.Math", "Min", 2) => ClrOperations.CompareNumbers(arguments[1]!, arguments[0]!) < 0 ? arguments[1] : arguments[0],
+            ("System.Math", "Floor", 1) => Rounding(arguments[0], Math.Floor, Math.Floor),
+            ("System.Math", "Ceiling", 1) => Rounding(arguments[0], Math.Ceiling, Math.Ceiling),
+            ("System.Math", "Round", 1) => Rounding(arguments[0], Math.Round, Math.Round),
+            ("System.Math", "Round", 2) when arguments[1] is int digits => Rounding(arguments[0], d => Math.Round(d, digits), m => Math.Round(m, digits)),
+            ("string", "Equals", 2) when method.Parameters[0].Type.SpecialType == SpecialType.System_String =>
+                string.Equals((string?)arguments[0], (string?)arguments[1], StringComparison.Ordinal),
             _ => throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'"),
         };
     }
@@ -50,6 +68,23 @@ internal static class KnownMethods
         }
 
         throw new UnsupportedSyntaxException($"メンバー '{memberAccess}' の参照");
+    }
+
+    /// <summary>
+    /// Math.Floor / Ceiling / Round を double・decimal ごとに評価する（Round は C# と同じく偶数丸め）
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <param name="forDouble">double の場合の計算</param>
+    /// <param name="forDecimal">decimal の場合の計算</param>
+    /// <returns>計算結果</returns>
+    private static object Rounding(object? value, Func<double, double> forDouble, Func<decimal, decimal> forDecimal)
+    {
+        return value switch
+        {
+            double d => forDouble(d),
+            decimal m => forDecimal(m),
+            _ => throw new UnsupportedSyntaxException("Math の丸めの引数の型"),
+        };
     }
 
     /// <summary>

@@ -11,7 +11,7 @@ namespace IngeniousXUnitGenerator.Core.Generation;
 /// </summary>
 internal static class BoundaryInputGenerator
 {
-    private const int MaxRows = 20;
+    private const int MaxRows = 40;
 
     /// <summary>
     /// 数値・文字列・bool・列挙型・コレクションの引数は基準の値と境界値の組み合わせを、それ以外の引数は固定の値（モックなど）を作る
@@ -46,8 +46,39 @@ internal static class BoundaryInputGenerator
             if (!TryAddParameter(builder, parameter, conditions, constants ?? [], allowMocks, varyCollections)) return null;
         }
 
+        // 引数どうしの比較（a > b など）は、片方を「もう片方の基準の値 ±1」にした入力で分岐を通す
+        foreach (var (left, right) in CollectParameterRelations(declaration, model, member))
+        {
+            builder.AddRelativeVariations(left, right);
+            builder.AddRelativeVariations(right, left);
+        }
+
         failedParameter = null;
         return new BoundaryInputs(builder.DataParameters, builder.FixedValues, CombineOneAtATime([.. builder.BaseRow], [.. builder.Variations]));
+    }
+
+    /// <summary>
+    /// 本体で、数値の引数どうしを比べている組を集める
+    /// </summary>
+    /// <param name="declaration">メソッドの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド</param>
+    /// <returns>比べている引数の組</returns>
+    private static List<(IParameterSymbol Left, IParameterSymbol Right)> CollectParameterRelations(
+        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member)
+    {
+        var relations = new List<(IParameterSymbol, IParameterSymbol)>();
+        foreach (var binary in declaration.DescendantNodes().OfType<BinaryExpressionSyntax>().Where(IsComparison))
+        {
+            var left = ConditionParser.GetParameter(binary.Left, model, member);
+            var right = ConditionParser.GetParameter(binary.Right, model, member);
+            if (left is null || right is null || SymbolEqualityComparer.Default.Equals(left, right)) continue;
+            if (!ConditionParser.IsNumeric(left.Type) || !ConditionParser.IsNumeric(right.Type)) continue;
+
+            relations.Add((left, right));
+        }
+
+        return relations;
     }
 
     /// <summary>
@@ -84,7 +115,7 @@ internal static class BoundaryInputGenerator
 
         var variations = GetParameterVariations(parameter.Type, constants, conditions);
         if (allowNull && parameter.Type.SpecialType == SpecialType.System_String) variations.Add(null);
-        builder.AddData(parameter, ToClrValue(valid, parameter.Type), variations);
+        builder.AddData(parameter, ToClrValue(valid, parameter.Type), variations, conditions);
         return true;
     }
 
@@ -113,9 +144,44 @@ internal static class BoundaryInputGenerator
         /// <param name="others">ほかの値</param>
         public void AddData(IParameterSymbol parameter, object? baseValue, List<object?> others)
         {
+            AddData(parameter, baseValue, others, []);
+        }
+
+        /// <summary>
+        /// 境界値を変える引数を、ガード条件とともに加える
+        /// </summary>
+        /// <param name="parameter">引数</param>
+        /// <param name="baseValue">基準の値</param>
+        /// <param name="others">ほかの値</param>
+        /// <param name="conditions">その引数のガード条件（関係による境界値を加えるときに使う）</param>
+        public void AddData(IParameterSymbol parameter, object? baseValue, List<object?> others, List<GuardCondition> conditions)
+        {
             DataParameters.Add(parameter);
             BaseRow.Add(baseValue);
             Variations.Add(others);
+            _conditions.Add(conditions);
+        }
+
+        private readonly List<List<GuardCondition>> _conditions = [];
+
+        /// <summary>
+        /// target の境界値に「other の基準の値 -1, ±0, +1」を加える（ガードで例外になる値・型に収まらない値は除く）
+        /// </summary>
+        /// <param name="target">境界値を加える引数</param>
+        /// <param name="other">比べている相手の引数</param>
+        public void AddRelativeVariations(IParameterSymbol target, IParameterSymbol other)
+        {
+            var targetIndex = DataParameters.FindIndex(p => SymbolEqualityComparer.Default.Equals(p, target));
+            var otherIndex = DataParameters.FindIndex(p => SymbolEqualityComparer.Default.Equals(p, other));
+            if (targetIndex < 0 || otherIndex < 0 || !ClrOperationsBridge.TryToDecimal(BaseRow[otherIndex], out var pivot)) return;
+
+            foreach (var candidate in new[] { pivot - 1, pivot, pivot + 1 }.Select(TestValue.FromNumber))
+            {
+                if (!ValueSolver.IsRepresentable(candidate, target.Type) || _conditions[targetIndex].Any(c => c.IsViolatedBy(candidate))) continue;
+
+                var value = ToClrValue(candidate, target.Type);
+                if (!Variations[targetIndex].Contains(value)) Variations[targetIndex].Add(value);
+            }
         }
     }
 
@@ -292,6 +358,7 @@ internal static class BoundaryInputGenerator
             {
                 BinaryExpressionSyntax binary when IsComparison(binary) => SplitComparison(binary, model),
                 ConstantPatternSyntax constantPattern => (GetPatternSubject(constantPattern), constantPattern.Expression),
+                CaseSwitchLabelSyntax caseLabel => ((caseLabel.Parent?.Parent as SwitchStatementSyntax)?.Expression, caseLabel.Value),
                 RelationalPatternSyntax relational => (GetPatternSubject(relational), relational.Expression),
                 _ => (null, null),
             };
@@ -348,7 +415,9 @@ internal static class BoundaryInputGenerator
                     return switchExpression.GoverningExpression;
                 case IsPatternExpressionSyntax isPattern:
                     return isPattern.Expression;
-                case PatternSyntax or SwitchExpressionArmSyntax:
+                case SwitchStatementSyntax switchStatement:
+                    return switchStatement.Expression;
+                case PatternSyntax or SwitchExpressionArmSyntax or CasePatternSwitchLabelSyntax or SwitchSectionSyntax:
                     continue;
                 default:
                     return null;
@@ -379,5 +448,30 @@ internal static class BoundaryInputGenerator
             },
             _ => null,
         };
+    }
+}
+
+/// <summary>
+/// 基準の値（int / long / double / decimal）を decimal として取り出す
+/// </summary>
+internal static class ClrOperationsBridge
+{
+    /// <summary>
+    /// 数値なら decimal に変換する
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <param name="number">変換した値</param>
+    /// <returns>数値ならtrue</returns>
+    public static bool TryToDecimal(object? value, out decimal number)
+    {
+        number = value switch
+        {
+            int i => i,
+            long l => l,
+            double d when -1e15 < d && d < 1e15 => (decimal)d,
+            decimal m => m,
+            _ => decimal.MinValue,
+        };
+        return number != decimal.MinValue;
     }
 }

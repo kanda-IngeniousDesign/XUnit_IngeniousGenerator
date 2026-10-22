@@ -32,6 +32,9 @@ public sealed class MethodInterpreter
 
         /// <summary>return した</summary>
         Return,
+
+        /// <summary>switch 文の break に到達した</summary>
+        Break,
     }
 
     /// <summary>
@@ -92,7 +95,7 @@ public sealed class MethodInterpreter
         switch (statement)
         {
             case BlockSyntax block:
-                return block.Statements.Any(s => Execute(s) == Flow.Return) ? Flow.Return : Flow.Normal;
+                return ExecuteBlock(block);
             case LocalDeclarationStatementSyntax local:
                 DeclareLocals(local);
                 return Flow.Normal;
@@ -108,8 +111,85 @@ public sealed class MethodInterpreter
                 return Flow.Normal;
             case EmptyStatementSyntax:
                 return Flow.Normal;
+            case SwitchStatementSyntax switchStatement:
+                return ExecuteSwitch(switchStatement);
+            case BreakStatementSyntax:
+                return Flow.Break;
             default:
                 throw new UnsupportedSyntaxException(DescribeStatement(statement));
+        }
+    }
+
+    /// <summary>
+    /// ブロックの文を順に実行する（return・break に到達したら、そこで抜ける）
+    /// </summary>
+    /// <param name="block">ブロック</param>
+    /// <returns>実行結果</returns>
+    private Flow ExecuteBlock(BlockSyntax block)
+    {
+        foreach (var statement in block.Statements)
+        {
+            var flow = Execute(statement);
+            if (flow != Flow.Normal) return flow;
+        }
+
+        return Flow.Normal;
+    }
+
+    /// <summary>
+    /// switch 文を実行する（case の定数・パターンで分岐し、break で抜ける。when 句は対象外）
+    /// </summary>
+    /// <param name="switchStatement">switch 文</param>
+    /// <returns>実行結果（break は switch の中で消化する）</returns>
+    private Flow ExecuteSwitch(SwitchStatementSyntax switchStatement)
+    {
+        var value = EvaluateConverted(switchStatement.Expression);
+        var section = FindSwitchSection(switchStatement, value);
+        if (section is null) return Flow.Normal;
+
+        foreach (var statement in section.Statements)
+        {
+            var flow = Execute(statement);
+            if (flow == Flow.Break) return Flow.Normal;
+            if (flow == Flow.Return) return Flow.Return;
+        }
+
+        return Flow.Normal;
+    }
+
+    /// <summary>
+    /// 値に合う switch のセクションを探す（合うものがなければ default）
+    /// </summary>
+    /// <param name="switchStatement">switch 文</param>
+    /// <param name="value">switch の値</param>
+    /// <returns>実行するセクション（なければnull）</returns>
+    private SwitchSectionSyntax? FindSwitchSection(SwitchStatementSyntax switchStatement, object? value)
+    {
+        var matcher = new PatternMatcher(_model);
+        var matched = switchStatement.Sections.FirstOrDefault(s => s.Labels.Any(l => LabelMatches(l, value, matcher)));
+        return matched ?? switchStatement.Sections.FirstOrDefault(s => s.Labels.Any(l => l is DefaultSwitchLabelSyntax));
+    }
+
+    /// <summary>
+    /// case ラベル（定数・パターン）が値に合うかを判定する（default は合わないものとして扱う）
+    /// </summary>
+    /// <param name="label">case ラベル</param>
+    /// <param name="value">switch の値</param>
+    /// <param name="matcher">パターンの評価</param>
+    /// <returns>合えばtrue</returns>
+    private bool LabelMatches(SwitchLabelSyntax label, object? value, PatternMatcher matcher)
+    {
+        switch (label)
+        {
+            case CaseSwitchLabelSyntax caseLabel:
+                var constant = _model.GetConstantValue(caseLabel.Value);
+                if (!constant.HasValue) throw new UnsupportedSyntaxException($"定数でない case '{caseLabel.Value}'");
+                return ClrOperations.ValuesEqual(value, constant.Value);
+            case CasePatternSwitchLabelSyntax patternLabel:
+                if (patternLabel.WhenClause is not null) throw new UnsupportedSyntaxException("switch 文の when 句");
+                return matcher.Matches(patternLabel.Pattern, value);
+            default:
+                return false;
         }
     }
 
@@ -363,7 +443,6 @@ public sealed class MethodInterpreter
         return statement switch
         {
             ForStatementSyntax or ForEachStatementSyntax or WhileStatementSyntax or DoStatementSyntax => "ループ",
-            SwitchStatementSyntax => "switch 文",
             TryStatementSyntax => "try 文",
             UsingStatementSyntax => "using 文",
             _ => $"文 '{Shorten(statement)}'",

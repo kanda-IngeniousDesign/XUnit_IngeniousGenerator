@@ -27,7 +27,7 @@ public sealed class SnapshotAndMockGenerationTests : IDisposable
             {
                 public string Format(string label, int digits)
                 {
-                    var text = label.Trim();
+                    var text = label.ToUpper();
                     return digits < 0 ? text : text.PadLeft(digits, '0');
                 }
             }
@@ -52,7 +52,7 @@ public sealed class SnapshotAndMockGenerationTests : IDisposable
         Assert.True(second.Succeeded, second.Output);
 
         // 対象の挙動が変わると、記録との違いでテストが失敗する
-        var changed = source.Replace("label.Trim()", "label.Trim().ToUpperInvariant()", StringComparison.Ordinal);
+        var changed = source.Replace("label.ToUpper()", "label.ToLower()", StringComparison.Ordinal);
         var third = await DotnetTestRunner.RunAsync(_workDirectory, changed, result.Code, "FormatterTests.cs");
         Assert.False(third.Succeeded, third.Output);
         Assert.Contains("VerifyException", third.Output);
@@ -138,7 +138,7 @@ public sealed class SnapshotAndMockGenerationTests : IDisposable
             {
                 public string Format(string label, int digits)
                 {
-                    var text = label.Trim();
+                    var text = label.ToUpper();
                     if (digits < 0) throw new ArgumentOutOfRangeException(nameof(digits));
                     return text.PadLeft(digits, '0');
                 }
@@ -190,7 +190,7 @@ public sealed class SnapshotAndMockGenerationTests : IDisposable
             public interface IClock { int Hour(); }
             public class Formatter
             {
-                public string Format(string label) => label.Trim();
+                public string Format(string label) => label.ToUpper();
 
                 public int Hours(IClock clock) => clock.Hour();
             }
