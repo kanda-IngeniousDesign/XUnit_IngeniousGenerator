@@ -14,17 +14,19 @@ internal static class BoundaryInputGenerator
     private const int MaxRows = 20;
 
     /// <summary>
-    /// 数値・文字列・bool の引数は基準の値と境界値の組み合わせを、それ以外の引数は固定の値（モックなど）を作る
+    /// 数値・文字列・bool・列挙型・コレクションの引数は基準の値と境界値の組み合わせを、それ以外の引数は固定の値（モックなど）を作る
     /// </summary>
     /// <param name="member">メソッド</param>
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
     /// <param name="guards">先頭のガード</param>
     /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
+    /// <param name="varyCollections">コレクションを空・null にも変えるか（スナップショットでは記録ファイル名が重なるため変えない）</param>
     /// <param name="failedParameter">値を作れなかった引数</param>
     /// <returns>入力（値を作れない引数があればnull）</returns>
     public static BoundaryInputs? Generate(
-        IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, bool allowMocks, out IParameterSymbol? failedParameter)
+        IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, bool allowMocks, bool varyCollections,
+        out IParameterSymbol? failedParameter)
     {
         // 先頭のガードに加えて、本体の途中で例外になる条件も避ける（スナップショットは生成時に実行して確かめられないため）
         var guardConditions = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases)
@@ -32,10 +34,7 @@ internal static class BoundaryInputGenerator
             .ToList();
         var boundaries = CollectBoundaryConstants(declaration, model, member);
 
-        var dataParameters = new List<IParameterSymbol>();
-        var fixedValues = new Dictionary<IParameterSymbol, TestValue>(SymbolEqualityComparer.Default);
-        var baseRow = new List<object?>();
-        var variations = new List<List<object?>>();
+        var builder = new InputsBuilder();
         foreach (var parameter in member.Parameters)
         {
             failedParameter = parameter;
@@ -43,25 +42,134 @@ internal static class BoundaryInputGenerator
                 .Where(c => SymbolEqualityComparer.Default.Equals(c.Parameter, parameter))
                 .Select(c => c.Condition)
                 .ToList();
-            if (!ReturnValueTestPlanner.IsSupportedType(parameter.Type))
-            {
-                var fixedValue = FindFixedValue(parameter.Type, conditions, allowMocks);
-                if (fixedValue is null) return null;
-                fixedValues[parameter] = fixedValue;
-                continue;
-            }
-
-            var valid = FindBaseValue(parameter.Type, conditions);
-            if (valid is null) return null;
-
-            dataParameters.Add(parameter);
-            baseRow.Add(ToClrValue(valid, parameter.Type));
             boundaries.TryGetValue(parameter, out var constants);
-            variations.Add(GetParameterVariations(parameter.Type, constants ?? [], conditions));
+            if (!TryAddParameter(builder, parameter, conditions, constants ?? [], allowMocks, varyCollections)) return null;
         }
 
         failedParameter = null;
-        return new BoundaryInputs(dataParameters, fixedValues, CombineOneAtATime([.. baseRow], [.. variations]));
+        return new BoundaryInputs(builder.DataParameters, builder.FixedValues, CombineOneAtATime([.. builder.BaseRow], [.. builder.Variations]));
+    }
+
+    /// <summary>
+    /// 引数1つ分の基準の値と境界値（または固定の値）を加える
+    /// </summary>
+    /// <param name="builder">入力の組み立て先</param>
+    /// <param name="parameter">引数</param>
+    /// <param name="conditions">その引数のガード条件</param>
+    /// <param name="constants">本体でその引数と比べている定数</param>
+    /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
+    /// <param name="varyCollections">コレクションを空・null にも変えるか</param>
+    /// <returns>値を作れたらtrue</returns>
+    private static bool TryAddParameter(
+        InputsBuilder builder, IParameterSymbol parameter, List<GuardCondition> conditions, List<object> constants, bool allowMocks, bool varyCollections)
+    {
+        var allowNull = AllowsNull(parameter, conditions);
+        if (DataTypes.IsEnum(parameter.Type) || DataTypes.TryGetCollectionElement(parameter.Type, out _))
+        {
+            var (baseValue, others) = GetStructuredValues(parameter.Type, allowNull, varyCollections);
+            builder.AddData(parameter, baseValue, others);
+            return true;
+        }
+
+        if (!DataTypes.IsPrimitive(parameter.Type))
+        {
+            var fixedValue = FindFixedValue(parameter.Type, conditions, allowMocks);
+            if (fixedValue is null) return false;
+            builder.FixedValues[parameter] = fixedValue;
+            return true;
+        }
+
+        var valid = FindBaseValue(parameter.Type, conditions);
+        if (valid is null) return false;
+
+        var variations = GetParameterVariations(parameter.Type, constants, conditions);
+        if (allowNull && parameter.Type.SpecialType == SpecialType.System_String) variations.Add(null);
+        builder.AddData(parameter, ToClrValue(valid, parameter.Type), variations);
+        return true;
+    }
+
+    /// <summary>
+    /// 入力の組み立て途中の状態（境界値を変える引数の基準の値・ほかの値と、固定の値）
+    /// </summary>
+    private sealed class InputsBuilder
+    {
+        /// <summary>境界値を変える引数</summary>
+        public List<IParameterSymbol> DataParameters { get; } = [];
+
+        /// <summary>固定で渡す引数の値</summary>
+        public Dictionary<IParameterSymbol, TestValue> FixedValues { get; } = new(SymbolEqualityComparer.Default);
+
+        /// <summary>基準の入力</summary>
+        public List<object?> BaseRow { get; } = [];
+
+        /// <summary>引数ごとのほかの値</summary>
+        public List<List<object?>> Variations { get; } = [];
+
+        /// <summary>
+        /// 境界値を変える引数を加える
+        /// </summary>
+        /// <param name="parameter">引数</param>
+        /// <param name="baseValue">基準の値</param>
+        /// <param name="others">ほかの値</param>
+        public void AddData(IParameterSymbol parameter, object? baseValue, List<object?> others)
+        {
+            DataParameters.Add(parameter);
+            BaseRow.Add(baseValue);
+            Variations.Add(others);
+        }
+    }
+
+    /// <summary>
+    /// null を渡してよい引数か（null 許容の注釈 ? が付いていて、null で例外になるガードがない）を判定する
+    /// </summary>
+    /// <param name="parameter">引数</param>
+    /// <param name="conditions">その引数のガード条件</param>
+    /// <returns>null を渡してよいならtrue</returns>
+    private static bool AllowsNull(IParameterSymbol parameter, List<GuardCondition> conditions)
+    {
+        return parameter.Type.IsReferenceType
+            && parameter.NullableAnnotation == NullableAnnotation.Annotated
+            && !conditions.Any(c => c.Kind == GuardConditionKind.Null);
+    }
+
+    /// <summary>
+    /// 列挙型（全メンバー）・コレクション（要素1件を基準に、空・null）の値を作る
+    /// </summary>
+    /// <param name="type">引数の型</param>
+    /// <param name="allowNull">null を渡してよいか</param>
+    /// <param name="varyCollections">コレクションを空・null にも変えるか</param>
+    /// <returns>基準の値と、ほかの値</returns>
+    private static (object? Base, List<object?> Others) GetStructuredValues(ITypeSymbol type, bool allowNull, bool varyCollections)
+    {
+        if (DataTypes.IsEnum(type))
+        {
+            var members = GetEnumMembers(type);
+            return (members.FirstOrDefault(), members.Skip(1).ToList());
+        }
+
+        DataTypes.TryGetCollectionElement(type, out var elementType);
+        var element = DataTypes.IsEnum(elementType)
+            ? GetEnumMembers(elementType).FirstOrDefault()
+            : ToClrValue(FindBaseValue(elementType, []) ?? TestValue.FromString("a"), elementType);
+        var one = new CollectionValue(type, elementType, [element]);
+        if (!varyCollections) return (one, []);
+
+        var others = new List<object?> { new CollectionValue(type, elementType, []) };
+        if (allowNull) others.Add(null);
+        return (one, others);
+    }
+
+    /// <summary>
+    /// 列挙型のメンバーを宣言順に返す
+    /// </summary>
+    /// <param name="type">列挙型</param>
+    /// <returns>メンバー</returns>
+    private static List<object?> GetEnumMembers(ITypeSymbol type)
+    {
+        return type.GetMembers().OfType<IFieldSymbol>()
+            .Where(f => f.HasConstantValue)
+            .Select(f => (object?)new EnumMemberValue(type, f.Name))
+            .ToList();
     }
 
     /// <summary>
@@ -140,7 +248,7 @@ internal static class BoundaryInputGenerator
         IEnumerable<TestValue> candidates = type.SpecialType switch
         {
             SpecialType.System_Boolean => [TestValue.False],
-            SpecialType.System_String => constants.OfType<string>().Append(string.Empty).Select(TestValue.FromString),
+            SpecialType.System_String => constants.OfType<string>().Append(string.Empty).Append(" ").Select(TestValue.FromString),
             _ => GetNumberCandidates(constants),
         };
 

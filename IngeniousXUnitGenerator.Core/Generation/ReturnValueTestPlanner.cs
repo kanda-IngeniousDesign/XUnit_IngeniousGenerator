@@ -1,5 +1,6 @@
 using IngeniousXUnitGenerator.Core.Evaluation;
 using IngeniousXUnitGenerator.Core.Guards;
+using IngeniousXUnitGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -30,8 +31,7 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>扱えるならtrue</returns>
     public static bool IsSupportedType(ITypeSymbol type)
     {
-        return type.SpecialType is SpecialType.System_Int32 or SpecialType.System_Int64 or SpecialType.System_Double
-            or SpecialType.System_Decimal or SpecialType.System_Boolean or SpecialType.System_String;
+        return DataTypes.IsPrimitive(type);
     }
 
     /// <summary>
@@ -57,7 +57,8 @@ internal sealed class ReturnValueTestPlanner
 
         // 戻り値がない、または時刻・乱数で戻り値が変わるメソッドは、境界値の入力で例外が出ないことだけを確かめる
         var checksOnlyNoThrow = member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType) || dependency is not null;
-        var inputs = BoundaryInputGenerator.Generate(member, declaration, model, guards, _context.Options.UseMoq, out var failedParameter);
+        var inputs = BoundaryInputGenerator.Generate(
+            member, declaration, model, guards, _context.Options.UseMoq, varyCollections: checksOnlyNoThrow, out var failedParameter);
         if (inputs is null)
         {
             var hint = _context.Options.UseMoq ? string.Empty : "。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします";
@@ -101,6 +102,12 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>対象外の理由（計算を試せる場合はnull）</returns>
     private static string? GetStaticReason(IMethodSymbol member, BoundaryInputs inputs)
     {
+        var structured = inputs.DataParameters.FirstOrDefault(p => !IsSupportedType(p.Type));
+        if (structured is not null)
+        {
+            return $"引数 {structured.Name} の型 {structured.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)} は計算の対象外";
+        }
+
         if (0 < inputs.FixedValues.Count)
         {
             var parameter = inputs.FixedValues.Keys.First();

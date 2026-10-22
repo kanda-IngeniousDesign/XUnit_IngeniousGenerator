@@ -151,9 +151,13 @@ public static class TestClassGenerator
             (_, rewritten) => rewritten.WithOperand(rewritten.Operand.WithoutTrailingTrivia()));
 
         // TheoryData の1行（{ 入力, 期待値 }）は、NormalizeWhitespace が縦に展開するため1行にまとめる
-        compilationUnit = compilationUnit.ReplaceNodes(
-            compilationUnit.DescendantNodes().OfType<InitializerExpressionSyntax>().Where(n => n.IsKind(SyntaxKind.ComplexElementInitializerExpression)),
-            (original, _) => ToSingleLine(original));
+        // （行の中の配列・List の初期化子も1行にする）
+        var theoryDataRows = compilationUnit.DescendantNodes().OfType<InitializerExpressionSyntax>()
+            .Where(n => n.IsKind(SyntaxKind.CollectionInitializerExpression) && n.Parent is ObjectCreationExpressionSyntax { Type: GenericNameSyntax { Identifier.ValueText: "TheoryData" } })
+            .SelectMany(n => n.Expressions);
+        compilationUnit = compilationUnit.ReplaceNodes(theoryDataRows, (original, _) => original is InitializerExpressionSyntax row
+            ? ToSingleLine(row)
+            : (ExpressionSyntax)new InitializerCompactor().Visit(original)!);
 
         var testClass = compilationUnit.DescendantNodes().OfType<ClassDeclarationSyntax>().First();
 
@@ -188,12 +192,60 @@ public static class TestClassGenerator
     /// <returns>1行にした初期化子</returns>
     private static InitializerExpressionSyntax ToSingleLine(InitializerExpressionSyntax initializer)
     {
-        var expressions = initializer.Expressions.Select(e => e.WithoutTrivia());
+        var expressions = initializer.Expressions.Select(e => (ExpressionSyntax)new InitializerCompactor().Visit(e.WithoutTrivia()));
         var separators = Enumerable.Repeat(Token(SyntaxKind.CommaToken).WithTrailingTrivia(Space), Math.Max(0, initializer.Expressions.Count - 1));
         return initializer
             .WithOpenBraceToken(Token(SyntaxKind.OpenBraceToken).WithLeadingTrivia(initializer.OpenBraceToken.LeadingTrivia).WithTrailingTrivia(Space))
             .WithExpressions(SeparatedList(expressions, separators))
             .WithCloseBraceToken(Token(SyntaxKind.CloseBraceToken).WithLeadingTrivia(Space).WithTrailingTrivia(initializer.CloseBraceToken.TrailingTrivia));
+    }
+
+    /// <summary>
+    /// 配列・List の初期化子（new int[] { 1 } など）を1行に詰める
+    /// </summary>
+    private sealed class InitializerCompactor : CSharpSyntaxRewriter
+    {
+        /// <summary>
+        /// 初期化子を「{ a, b }」の形にする
+        /// </summary>
+        /// <param name="node">初期化子</param>
+        /// <returns>1行にした初期化子</returns>
+        public override SyntaxNode? VisitInitializerExpression(InitializerExpressionSyntax node)
+        {
+            var visited = (InitializerExpressionSyntax)base.VisitInitializerExpression(node)!;
+            var expressions = visited.Expressions.Select(e => e.WithoutTrivia());
+            var separators = Enumerable.Repeat(Token(SyntaxKind.CommaToken).WithTrailingTrivia(Space), Math.Max(0, visited.Expressions.Count - 1));
+            return visited
+                .WithOpenBraceToken(Token(SyntaxKind.OpenBraceToken).WithTrailingTrivia(Space))
+                .WithExpressions(SeparatedList(expressions, separators))
+                .WithCloseBraceToken(Token(SyntaxKind.CloseBraceToken).WithLeadingTrivia(Space));
+        }
+
+        /// <summary>
+        /// 「new int[]」と初期化子の間を空白1つにする
+        /// </summary>
+        /// <param name="node">配列の生成式</param>
+        /// <returns>詰めた生成式</returns>
+        public override SyntaxNode? VisitArrayCreationExpression(ArrayCreationExpressionSyntax node)
+        {
+            var visited = (ArrayCreationExpressionSyntax)base.VisitArrayCreationExpression(node)!;
+            return visited.Initializer is null ? visited : visited.WithType(visited.Type.WithTrailingTrivia(Space));
+        }
+
+        /// <summary>
+        /// 「new List&lt;T&gt;」と初期化子の間を空白1つにする
+        /// </summary>
+        /// <param name="node">オブジェクトの生成式</param>
+        /// <returns>詰めた生成式</returns>
+        public override SyntaxNode? VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
+        {
+            var visited = (ObjectCreationExpressionSyntax)base.VisitObjectCreationExpression(node)!;
+            if (visited.Initializer is null) return visited;
+
+            return visited.ArgumentList is { } arguments
+                ? visited.WithArgumentList(arguments.WithTrailingTrivia(Space))
+                : visited.WithType(visited.Type.WithTrailingTrivia(Space));
+        }
     }
 
     /// <summary>

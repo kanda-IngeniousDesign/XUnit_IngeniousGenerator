@@ -40,7 +40,25 @@ public sealed class ValueRenderer
     public TypeSyntax RenderType(ITypeSymbol type)
     {
         CollectNamespaces(type);
-        return ParseTypeName(type.ToDisplayString(TypeFormat));
+        var syntax = ParseTypeName(type.ToDisplayString(TypeFormat));
+
+        // null 許容の注釈（string? など）は、テストの引数・TheoryData の型にも引き継ぐ
+        return type.IsReferenceType && type.NullableAnnotation == NullableAnnotation.Annotated ? NullableType(syntax) : syntax;
+    }
+
+    /// <summary>
+    /// テストデータの値（基本の型・列挙型のメンバー・コレクション）を式にする
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <returns>式の構文</returns>
+    public ExpressionSyntax RenderData(object? value)
+    {
+        return value switch
+        {
+            EnumMemberValue member => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, RenderType(member.Type), IdentifierName(member.Name)),
+            CollectionValue collection => RenderCollection(collection),
+            _ => RenderClrValue(value),
+        };
     }
 
     /// <summary>
@@ -175,6 +193,35 @@ public sealed class ValueRenderer
         if (magnitude <= uint.MaxValue) return Literal(text, (uint)magnitude);
         if (magnitude <= long.MaxValue) return Literal(text, (long)magnitude);
         return Literal(text, (ulong)magnitude);
+    }
+
+    /// <summary>
+    /// コレクションを作る（List&lt;T&gt; は new List&lt;T&gt; { ... }、それ以外は配列で渡す）
+    /// </summary>
+    /// <param name="collection">コレクション</param>
+    /// <returns>式の構文</returns>
+    private ExpressionSyntax RenderCollection(CollectionValue collection)
+    {
+        var elementType = RenderType(collection.ElementType.WithNullableAnnotation(NullableAnnotation.None));
+        var items = collection.Items.Select(RenderData).ToList();
+        if (DataTypes.IsList(collection.CollectionType))
+        {
+            var listType = GenericName("List").WithTypeArgumentList(TypeArgumentList(SingletonSeparatedList(elementType)));
+            AddNamespace("System.Collections.Generic");
+            return items.Count == 0
+                ? ObjectCreationExpression(listType).WithArgumentList(ArgumentList())
+                : ObjectCreationExpression(listType).WithInitializer(InitializerExpression(SyntaxKind.CollectionInitializerExpression, SeparatedList(items)));
+        }
+
+        if (items.Count == 0)
+        {
+            AddNamespace("System");
+            var empty = GenericName("Empty").WithTypeArgumentList(TypeArgumentList(SingletonSeparatedList(elementType)));
+            return InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("Array"), empty));
+        }
+
+        return ArrayCreationExpression(ArrayType(elementType).AddRankSpecifiers(ArrayRankSpecifier()))
+            .WithInitializer(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList(items)));
     }
 
     /// <summary>

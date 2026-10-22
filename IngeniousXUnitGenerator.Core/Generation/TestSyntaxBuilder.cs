@@ -264,12 +264,12 @@ internal sealed class TestSyntaxBuilder
     private IEnumerable<MemberDeclarationSyntax> WithTheoryData(
         MethodDeclarationSyntax method, string dataName, IReadOnlyList<ITypeSymbol> columnTypes, IReadOnlyList<IReadOnlyList<object?>> rows)
     {
-        // decimal は属性の引数に書けないため、TheoryData のプロパティから渡す
-        if (!columnTypes.Any(t => t.SpecialType == SpecialType.System_Decimal))
+        // decimal とコレクションは属性の引数に書けないため、TheoryData のプロパティから渡す
+        if (!DataTypes.RequiresTheoryData(columnTypes))
         {
             var inlineData = rows.Select(r => AttributeList(SingletonSeparatedList(Attribute(
                 IdentifierName("InlineData"),
-                AttributeArgumentList(SeparatedList(r.Select(v => AttributeArgument(ValueRenderer.RenderClrValue(v)))))))));
+                AttributeArgumentList(SeparatedList(r.Select(v => AttributeArgument(_renderer.RenderData(v)))))))));
             return [method.AddAttributeLists([TheoryAttribute(), .. inlineData])];
         }
 
@@ -292,7 +292,7 @@ internal sealed class TestSyntaxBuilder
         var theoryDataType = GenericName("TheoryData").WithTypeArgumentList(TypeArgumentList(SeparatedList(columnTypes.Select(_renderer.RenderType))));
         var elements = rows.Select(r =>
         {
-            var values = r.Select(ValueRenderer.RenderClrValue).ToList();
+            var values = r.Select(_renderer.RenderData).ToList();
             return values.Count == 1
                 ? values[0]
                 : InitializerExpression(SyntaxKind.ComplexElementInitializerExpression, SeparatedList(values));
