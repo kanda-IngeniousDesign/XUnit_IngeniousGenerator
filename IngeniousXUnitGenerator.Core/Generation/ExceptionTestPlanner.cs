@@ -77,7 +77,8 @@ internal sealed class ExceptionTestPlanner
             }
 
             // 他の引数は、対象のガードまでに評価される条件をすべて通過する値にする
-            var valid = ValueSolver.FindValid(parameter.Type, GetConditionsUpTo(statements, index, parameter), _context.Options.UseMoq);
+            var valid = ValueSolver.FindValid(
+                parameter.Type, GetConditionsUpTo(statements, index, parameter), _context.Options.UseMoq, _context.Constructor.CreateDependency);
             if (valid is null)
             {
                 _context.ManualItems.Add($"{display}: 引数 {parameter.Name} の有効な値を決められないため、{target.Name} の{violating.ConditionName}のテストは対象外です");

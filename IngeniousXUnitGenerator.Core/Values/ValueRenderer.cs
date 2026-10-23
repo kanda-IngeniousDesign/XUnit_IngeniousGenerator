@@ -114,11 +114,24 @@ public sealed class ValueRenderer
             TestValueKind.Char => LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('a')),
             TestValueKind.EnumMember => MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression, RenderType(value.Type!), IdentifierName(value.Text)),
-            TestValueKind.New => ObjectCreationExpression(RenderType(value.Type!)).WithArgumentList(ArgumentList()),
+            TestValueKind.New => RenderNew(value),
             TestValueKind.Default => DefaultExpression(RenderType(value.Type!)),
             TestValueKind.Mock => RenderMock(value.Type!),
             _ => RenderEmptyArray((IArrayTypeSymbol)value.Type!),
         };
+    }
+
+    /// <summary>
+    /// new T(...) を作る（同じ引数の数のコンストラクタがあれば、引数にキャストを付けて呼び分ける）
+    /// </summary>
+    /// <param name="value">生成する値</param>
+    /// <returns>式の構文</returns>
+    private ExpressionSyntax RenderNew(TestValue value)
+    {
+        var count = value.Arguments.Count;
+        var withCast = 0 < count && 1 < ((INamedTypeSymbol)value.Type!).InstanceConstructors.Count(c => c.Parameters.Length == count);
+        var arguments = value.Arguments.Select(a => Argument(Render(a.Value, a.Type, withCast)));
+        return ObjectCreationExpression(RenderType(value.Type!)).WithArgumentList(ArgumentList(SeparatedList(arguments)));
     }
 
     /// <summary>

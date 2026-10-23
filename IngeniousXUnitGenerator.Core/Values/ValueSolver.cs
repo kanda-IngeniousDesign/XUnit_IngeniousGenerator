@@ -14,10 +14,12 @@ public static class ValueSolver
     /// <param name="type">引数の型</param>
     /// <param name="conditions">その引数に対する、先に評価されるガードの条件</param>
     /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
+    /// <param name="construct">引数なしコンストラクタがないクラスを、引数を決めて生成する方法（なければ生成しない）</param>
     /// <returns>有効な値（見つからなければnull）</returns>
-    public static TestValue? FindValid(ITypeSymbol type, IReadOnlyList<GuardCondition> conditions, bool allowMocks)
+    public static TestValue? FindValid(
+        ITypeSymbol type, IReadOnlyList<GuardCondition> conditions, bool allowMocks, Func<INamedTypeSymbol, TestValue?>? construct = null)
     {
-        return GetCandidates(type, conditions, allowMocks)
+        return GetCandidates(type, conditions, allowMocks, construct)
             .FirstOrDefault(v => IsRepresentable(v, type) && !conditions.Any(c => c.IsViolatedBy(v)));
     }
 
@@ -44,10 +46,18 @@ public static class ValueSolver
     /// <param name="type">引数の型</param>
     /// <param name="conditions">その引数に対するガードの条件</param>
     /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
+    /// <param name="construct">引数なしコンストラクタがないクラスを生成する方法</param>
     /// <returns>値の候補</returns>
-    private static IEnumerable<TestValue> GetCandidates(ITypeSymbol type, IReadOnlyList<GuardCondition> conditions, bool allowMocks)
+    private static IEnumerable<TestValue> GetCandidates(
+        ITypeSymbol type, IReadOnlyList<GuardCondition> conditions, bool allowMocks, Func<INamedTypeSymbol, TestValue?>? construct)
     {
         var candidate = GetNonNullCandidates(type, conditions);
+        if (construct is not null && type is INamedTypeSymbol { TypeKind: TypeKind.Class, IsAbstract: false } named && !HasPublicParameterlessConstructor(named))
+        {
+            // 候補を列挙する時点までは組み立てない（前の候補で決まれば不要なため）
+            candidate = candidate.Concat(new[] { named }.Select(construct).OfType<TestValue>());
+        }
+
         if (allowMocks && IsMockable(type)) candidate = candidate.Append(TestValue.OfType(TestValueKind.Mock, type));
         return type.IsReferenceType || IsNullableValueType(type) ? candidate.Append(TestValue.Null) : candidate;
     }

@@ -36,13 +36,18 @@ internal sealed class SutPlan
         if (targetType.IsStatic) return Blocked("staticクラスのため");
         if (targetType.IsAbstract) return Blocked("抽象クラスは具象サブクラスが必要なため");
 
-        var constructors = targetType.InstanceConstructors
-            .Where(c => c.DeclaredAccessibility == Accessibility.Public)
-            .OrderBy(c => c.Parameters.Length);
-        foreach (var constructor in constructors)
+        // null の依存で作ると、それを使う処理が NullReferenceException になるため、null を渡さずに作れる方法を優先する
+        var solved = context.Constructor.Solve(targetType, allowNull: false);
+        if (solved is not null) return new SutPlan(solved.Value.Constructor, solved.Value.Arguments, null);
+
+        solved = context.Constructor.Solve(targetType, allowNull: true);
+        if (solved is not null)
         {
-            var arguments = TryCreateArguments(constructor, context);
-            if (arguments is not null) return new SutPlan(constructor, arguments, null);
+            var nullParameters = solved.Value.Constructor.Parameters
+                .Where((p, i) => solved.Value.Arguments[i].Value.Kind == TestValueKind.Null && p.NullableAnnotation != NullableAnnotation.Annotated)
+                .Select(p => p.Name);
+            context.ManualItems.Add($"{targetType.Name}: 引数 {string.Join(", ", nullParameters)} を作れないため null を渡してテスト対象を生成しています（それを使う処理のテストは例外になります）");
+            return new SutPlan(solved.Value.Constructor, solved.Value.Arguments, null);
         }
 
         return Blocked(context.Options.UseMoq
@@ -58,37 +63,5 @@ internal sealed class SutPlan
     private static SutPlan Blocked(string reason)
     {
         return new SutPlan(null, [], reason);
-    }
-
-    /// <summary>
-    /// コンストラクタのガードをすべて通過する引数を求める
-    /// </summary>
-    /// <param name="constructor">コンストラクタ</param>
-    /// <param name="context">生成の情報</param>
-    /// <returns>引数の値（ガードを解析できない、または有効な値がない場合はnull）</returns>
-    private static List<(TestValue, ITypeSymbol)>? TryCreateArguments(IMethodSymbol constructor, GenerationContext context)
-    {
-        var conditions = new List<GuardCase>();
-        var declaration = MemberDisplay.FindDeclaration(constructor);
-        if (declaration is not null)
-        {
-            var guards = GuardExtractor.Extract(declaration, context.Compilation.GetSemanticModel(declaration.SyntaxTree), constructor);
-            if (guards.Statements.Any(s => !s.IsRecognized)) return null;
-            conditions.AddRange(guards.Statements.SelectMany(s => s.Cases));
-        }
-
-        var arguments = new List<(TestValue, ITypeSymbol)>(constructor.Parameters.Length);
-        foreach (var parameter in constructor.Parameters)
-        {
-            var parameterConditions = conditions
-                .Where(c => SymbolEqualityComparer.Default.Equals(c.Parameter, parameter))
-                .Select(c => c.Condition)
-                .ToList();
-            var value = ValueSolver.FindValid(parameter.Type, parameterConditions, context.Options.UseMoq);
-            if (value is null) return null;
-            arguments.Add((value, parameter.Type));
-        }
-
-        return arguments;
     }
 }

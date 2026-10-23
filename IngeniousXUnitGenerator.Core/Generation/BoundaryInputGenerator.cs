@@ -24,10 +24,11 @@ internal static class BoundaryInputGenerator
     /// <param name="varyCollections">コレクションを空・null にも変えるか（スナップショットでは記録ファイル名が重なるため変えない）</param>
     /// <param name="failedParameter">値を作れなかった引数</param>
     /// <param name="avoidBodyThrows">本体の途中で例外になる値も避けるか（false なら先頭のガードだけを避け、途中の throw に到達する入力も作る）</param>
+    /// <param name="construct">引数なしコンストラクタがないクラスの引数を生成する方法</param>
     /// <returns>入力（値を作れない引数があればnull）</returns>
     public static BoundaryInputs? Generate(
         IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, bool allowMocks, bool varyCollections,
-        out IParameterSymbol? failedParameter, bool avoidBodyThrows = true)
+        out IParameterSymbol? failedParameter, bool avoidBodyThrows = true, Func<INamedTypeSymbol, TestValue?>? construct = null)
     {
         // 先頭のガードに加えて、本体の途中で例外になる条件も避ける（スナップショットは生成時に実行して確かめられないため）
         var leadingGuards = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases);
@@ -44,7 +45,7 @@ internal static class BoundaryInputGenerator
                 .Select(c => c.Condition)
                 .ToList();
             boundaries.TryGetValue(parameter, out var constants);
-            if (!TryAddParameter(builder, parameter, conditions, constants ?? [], allowMocks, varyCollections)) return null;
+            if (!TryAddParameter(builder, parameter, conditions, constants ?? [], allowMocks, varyCollections, construct)) return null;
         }
 
         // 引数どうしの比較（a > b など）は、片方を「もう片方の基準の値 ±1」にした入力で分岐を通す
@@ -91,9 +92,11 @@ internal static class BoundaryInputGenerator
     /// <param name="constants">本体でその引数と比べている定数</param>
     /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
     /// <param name="varyCollections">コレクションを空・null にも変えるか</param>
+    /// <param name="construct">引数なしコンストラクタがないクラスの引数を生成する方法</param>
     /// <returns>値を作れたらtrue</returns>
     private static bool TryAddParameter(
-        InputsBuilder builder, IParameterSymbol parameter, List<GuardCondition> conditions, List<object> constants, bool allowMocks, bool varyCollections)
+        InputsBuilder builder, IParameterSymbol parameter, List<GuardCondition> conditions, List<object> constants, bool allowMocks, bool varyCollections,
+        Func<INamedTypeSymbol, TestValue?>? construct)
     {
         var allowNull = AllowsNull(parameter, conditions);
         if (DataTypes.IsEnum(parameter.Type) || DataTypes.TryGetCollectionElement(parameter.Type, out _))
@@ -105,7 +108,7 @@ internal static class BoundaryInputGenerator
 
         if (!DataTypes.IsPrimitive(parameter.Type))
         {
-            var fixedValue = FindFixedValue(parameter.Type, conditions, allowMocks);
+            var fixedValue = FindFixedValue(parameter.Type, conditions, allowMocks, construct);
             if (fixedValue is null) return false;
             builder.FixedValues[parameter] = fixedValue;
             return true;
@@ -245,11 +248,12 @@ internal static class BoundaryInputGenerator
     /// <param name="type">引数の型</param>
     /// <param name="conditions">その引数のガード条件</param>
     /// <param name="allowMocks">インターフェース・抽象クラスを Moq でモックしてよいか</param>
+    /// <param name="construct">引数なしコンストラクタがないクラスを生成する方法</param>
     /// <returns>固定の値（作れなければnull）</returns>
-    private static TestValue? FindFixedValue(ITypeSymbol type, List<GuardCondition> conditions, bool allowMocks)
+    private static TestValue? FindFixedValue(ITypeSymbol type, List<GuardCondition> conditions, bool allowMocks, Func<INamedTypeSymbol, TestValue?>? construct)
     {
         // null を渡すと本体で NullReferenceException になりやすいため、null しか作れない引数は対象外にする
-        var value = ValueSolver.FindValid(type, conditions, allowMocks);
+        var value = ValueSolver.FindValid(type, conditions, allowMocks, construct);
         return value is null || value.Kind == TestValueKind.Null ? null : value;
     }
 

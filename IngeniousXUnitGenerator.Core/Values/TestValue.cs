@@ -26,7 +26,7 @@ public enum TestValueKind
     /// <summary>列挙型の最初のメンバー</summary>
     EnumMember,
 
-    /// <summary>引数なしコンストラクタでの生成</summary>
+    /// <summary>コンストラクタでの生成（引数は Arguments）</summary>
     New,
 
     /// <summary>default(T)</summary>
@@ -44,12 +44,13 @@ public enum TestValueKind
 /// </summary>
 public sealed class TestValue
 {
-    private TestValue(TestValueKind kind, string text, decimal number, ITypeSymbol? type)
+    private TestValue(TestValueKind kind, string text, decimal number, ITypeSymbol? type, IReadOnlyList<(TestValue Value, ITypeSymbol Type)>? arguments = null)
     {
         Kind = kind;
         Text = text;
         Number = number;
         Type = type;
+        Arguments = arguments ?? [];
     }
 
     /// <summary>null</summary>
@@ -72,6 +73,9 @@ public sealed class TestValue
 
     /// <summary>生成する型（EnumMember・New・Default・EmptyArray・Mockのとき）</summary>
     public ITypeSymbol? Type { get; }
+
+    /// <summary>コンストラクタに渡す値（Newのとき）</summary>
+    public IReadOnlyList<(TestValue Value, ITypeSymbol Type)> Arguments { get; }
 
     /// <summary>
     /// テスト名の条件部分（例: IsNull, IsEmpty, IsMinus1）
@@ -115,6 +119,17 @@ public sealed class TestValue
     public static TestValue OfType(TestValueKind kind, ITypeSymbol type, string memberName = "")
     {
         return new TestValue(kind, memberName, 0, type);
+    }
+
+    /// <summary>
+    /// コンストラクタに引数を渡して生成する値を作る
+    /// </summary>
+    /// <param name="type">生成する型</param>
+    /// <param name="arguments">コンストラクタに渡す値</param>
+    /// <returns>値</returns>
+    public static TestValue Construct(ITypeSymbol type, IReadOnlyList<(TestValue Value, ITypeSymbol Type)> arguments)
+    {
+        return new TestValue(TestValueKind.New, string.Empty, 0, type, arguments);
     }
 
     /// <summary>

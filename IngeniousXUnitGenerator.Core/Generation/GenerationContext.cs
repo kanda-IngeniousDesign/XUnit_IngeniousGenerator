@@ -16,6 +16,7 @@ internal sealed class GenerationContext
     {
         Compilation = compilation;
         Options = options;
+        Constructor = new ObjectConstructor(this);
     }
 
     /// <summary>テスト対象を含むコンパイル</summary>
@@ -23,6 +24,9 @@ internal sealed class GenerationContext
 
     /// <summary>生成の設定</summary>
     public GenerationOptions Options { get; }
+
+    /// <summary>インスタンス（テスト対象・引数）の組み立て</summary>
+    public ObjectConstructor Constructor { get; }
 
     /// <summary>要手動（人間がテストを書けば単体テストで担保できるもの）</summary>
     public List<string> ManualItems { get; } = [];

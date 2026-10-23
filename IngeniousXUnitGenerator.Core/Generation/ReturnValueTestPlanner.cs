@@ -58,7 +58,8 @@ internal sealed class ReturnValueTestPlanner
         // 戻り値がない、または時刻・乱数で戻り値が変わるメソッドは、境界値の入力で例外が出ないことだけを確かめる
         var checksOnlyNoThrow = member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType) || dependency is not null;
         var inputs = BoundaryInputGenerator.Generate(
-            member, declaration, model, guards, _context.Options.UseMoq, varyCollections: checksOnlyNoThrow, out var failedParameter);
+            member, declaration, model, guards, _context.Options.UseMoq, varyCollections: checksOnlyNoThrow, out var failedParameter,
+            construct: _context.Constructor.CreateDependency);
         if (inputs is null)
         {
             var hint = _context.Options.UseMoq ? string.Empty : "。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします";
