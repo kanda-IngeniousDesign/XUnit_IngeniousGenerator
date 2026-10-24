@@ -24,7 +24,7 @@ C#のクラス・メソッドから、xUnitのテストコードを**LLMを使�
 関心事を分離し、コアロジックは一つだけ持つ。入口はコアを呼ぶ薄い層にする。
 
 - **コアライブラリ**（`netstandard2.0`、Roslynによる構文・意味解析、テストコード生成、整形）: `IngeniousXUnitGenerator.Core`。
-- **入口A（主入口）: CodeRefactoringProvider**（Analyzerパッケージとして配布）: クラス名の上でクイックアクション（`Ctrl+.`）に「このクラスのテストコードを生成」、メソッド上に「このメソッドのみ生成」を出す。利用者は通常GUIで操作するため、こちらを優先して作り込む。
+- **入口A（主入口）: TEST001 / TEST002 の警告と Fix**（Analyzerパッケージとして配布）: TEST001 はテストが不足していて自動生成できるとき（テストファイルがなければクラス名、あればテストのない関数名）に出し、Fix で生成・追加する。TEST002 はテストがなく自動生成できない関数に理由つきで出し、Fix は Ignore だけ。どちらも既定で無効で、有効にした人だけが使う。警告のないところにメニューを出すリファクタリング（CodeRefactoringProvider）は、利用者を混乱させるため置かない。
 - **入口B（後回し）: dotnet tool（CLI）**: 例として `dotnet ingenious-xunit gen --project Foo.csproj --class Bar [--method Baz]`。CIでの利用など、必要になった時点で着手する。開発中の精度計測（実コードでまとめて生成し、要手動の件数を集計する）は、CLIではなく作業用スクリプトで行う。
 - **VSIX（右クリックメニュー）は当面作らない。** 必要になったら、コアまたはCLIを呼ぶ薄いラッパーとして最後に検討する。VS内蔵のRoslynとのアセンブリ競合を避けるため、コアは `netstandard2.0` にしている。
 
@@ -32,7 +32,7 @@ C#のクラス・メソッドから、xUnitのテストコードを**LLMを使�
 
 ソリューション構成: `IngeniousXUnitGenerator.Core`（NuGet パッケージ `IngeniousXUnitGenerator.Core`、当面は `artifacts/packages` のローカル配布）/ `.Cli`（引数の受け口のみ）/ `.Tests`。
 
-入口（警告 TEST001・Fix・電球メニュー）は `CSharp_IngeniousAnalyzer` リポジトリの `Style_Test` に置き、Core パッケージを参照して Core.dll を同梱する。TEST001 は既定で無効。テストプロジェクトのファイル一覧は、同リポジトリの `build/CSharp_IngeniousAnalyzer.targets` が AdditionalFiles として渡す（既定は隣の「プロジェクト名.Tests」、`IngeniousTestProjectDirectory` で上書き）。`samples/PlacementCheck` は、ローカルの CSharp_IngeniousAnalyzer パッケージ（3.5.0-dev）で TEST001 と生成を試すためのサンプルである。
+入口（警告 TEST001・TEST002 と Fix）は `CSharp_IngeniousAnalyzer` リポジトリの `Style_Test` に置き、Core パッケージを参照して Core.dll を同梱する。どちらも既定で無効。警告を出すかは Core の `TestCoverageInspector`（実際の生成と同じ計画の処理）で判定し、警告と Fix の結果を食い違わせない。テストプロジェクトのテストファイル（中身からテストメソッド名を読む）と csproj（Moq・Verify の参照を読む）は、同リポジトリの `build/CSharp_IngeniousAnalyzer.targets` が AdditionalFiles として渡す（既定は隣の「プロジェクト名.Tests」、`IngeniousTestProjectDirectory` で上書き）。関数のテストがあるかは、命名規約どおり「関数名_」で始まるテストメソッドがあるかで判定する。`samples/PlacementCheck` は、ローカルの CSharp_IngeniousAnalyzer パッケージ（3.5.0-dev）で TEST001 と生成を試すためのサンプルである。
 
 Core やアナライザーを更新したら、`scripts/refresh-packages.sh` を実行する。開発中は同じバージョン番号でパッケージを作り直すため、NuGet のキャッシュやサンプルの `.packages` に古いビルドが残る。VS Code は同じ名前・同じバージョンのアナライザーを1つしか読み込まないため、どれか1つのサンプルに古いビルドが残っているだけで、古い動作になる（実際に、作成の Fix が出ない原因になった）。
 
@@ -81,13 +81,14 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 5. 戻り値のテスト（実行して記録するもの）: 静的に計算できない場合は Verify でスナップショットを記録する（初回だけ自動記録、CI では自動記録しない）。インターフェースの依存は Moq で自動モックする。テストプロジェクトが Verify.Xunit / Moq を参照している場合だけ使い、参照していなければ「要手動」に追加方法を書く。時刻・乱数・ファイル・DB などを直接使うメソッドは「生成不可」として報告する。
 6. TEST001（テストコードがないクラスの警告、既定は無効）と Fix・電球メニューを CSharp_IngeniousAnalyzer に実装（`feature/test001-missing-test` ブランチ）。テストプロジェクトがなければ Fix で作成する。VS Code で、警告 → 作成 → 警告が消える、テストがある場合の生成 → 警告が消える、生成したテストが dotnet test で成功、までを確認済み。
 7. 既存のテストファイルへのマージ（名前がまだないメンバーと using だけを構文操作で追加し、既存のメンバーには触れない。改行コード・字下げは既存ファイルに合わせる）。
-8. メソッド単位の生成（メソッド・コンストラクタ名の上の電球メニュー。テストプロジェクトがなければ作成する）。
+8. メソッド単位の生成（当初は電球メニューのリファクタリングで実装。15 で、関数名の TEST001 の Fix に置き換えた）。
 9. 例外が出ないことの確認：戻り値がないメソッド（void / Task）と、時刻・乱数で戻り値が変わるメソッドは、境界値の入力で `Record.Exception` が null であることを確かめる。ファイル・DB・通信を使うメソッドは環境で失敗するため「生成不可」のまま。
 10. 入力の拡充：列挙型は全メンバー、コレクション（配列・List<T>・IEnumerable<T> など）は1件を基準に空・null、文字列は空・空白・null（null は ? の注釈がある場合）。
 11. 分岐網羅の拡充：switch 文、引数どうしの比較（相手の基準の値 ±1）、カルチャに依存しない文字列操作・丸めの静的計算。
 12. ガードより後ろの throw：静的な評価で到達する入力を見つけ、例外の型・ParamName を確かめるテストを生成する（到達できないものだけ要手動）。
 13. プロパティの set アクセサー：先頭のガード（if-throw・ThrowIf～・`set => _x = value ?? throw ...`）から `_sut.P = 値` の例外テストを生成する（init と public でない set は対象外）。
 14. 具象クラスの依存：引数なしコンストラクタがないクラスは、そのコンストラクタのガードを通過する値で入れ子に組み立てる（`new Checker(new Options(new TaxRate(1m), "a"))`、深さ3まで、ソースにある public なクラスだけ）。テスト対象は null を渡さずに作れる方法を優先し、どうしても null になる引数は要手動に記録する。
+15. 警告の作り直し：TEST001 は自動生成できるテストが不足しているときだけ出す（テストファイルがなければクラス名、あればテストのない関数名。Fix はその関数のテストだけを追加）。TEST002（新設）は、テストがなく自動生成できない関数に理由つきで出し、Fix で `// Ignore TEST002` を挿入して人間の判断として残す。リファクタリングの電球メニューは削除した。
 
 これから:
 
