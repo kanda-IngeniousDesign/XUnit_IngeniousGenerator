@@ -13,11 +13,11 @@ internal static class DotnetTestRunner
 
     private static readonly Regex PassedLine = new(@"^\s+Passed\s+(?<name>[^\s(\[]+)", RegexOptions.Multiline);
 
-    // Verify が CI（ビルドサーバー）上と判定する環境変数
+    // Verify（DiffEngine）が CI（ビルドサーバー）上と判定する環境変数
     private static readonly string[] BuildServerVariables =
     [
-        "CI", "GITHUB_ACTIONS", "TF_BUILD", "BUILD_BUILDID", "APPVEYOR", "TRAVIS", "JENKINS_URL",
-        "TEAMCITY_VERSION", "GITLAB_CI", "BITBUCKET_BUILD_NUMBER", "BUILDKITE", "CIRCLECI",
+        "CI", "GITHUB_ACTION", "GITHUB_ACTIONS", "TF_BUILD", "APPVEYOR", "TRAVIS_BUILD_ID", "JENKINS_URL",
+        "TEAMCITY_VERSION", "GITLAB_CI", "GO_SERVER_URL",
     ];
 
     private const string ProjectFile = """
