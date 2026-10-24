@@ -7,6 +7,9 @@
     <PackageId>XUnit_IngeniousGenerator.Core</PackageId>
     <Version>0.1.0-preview.1</Version>
     <Description>C#のクラスから、xUnitのテストコードをRoslynだけで決定的に生成するライブラリです（CSharp_IngeniousAnalyzer のテスト生成で使用）。</Description>
+    <PackageProjectUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <IsPackable>true</IsPackable>
     <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
   </PropertyGroup>
