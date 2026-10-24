@@ -8,8 +8,8 @@ ROOT=${0:A:h:h}
 ANALYZER=${ROOT:h}/CSharp_IngeniousAnalyzer
 OUT=$ROOT/artifacts/packages
 
-dotnet pack "$ROOT/IngeniousXUnitGenerator.Core" -c Release -o "$OUT" | { grep -E "error|Successfully" || true; }
-rm -rf ~/.nuget/packages/ingeniousxunitgenerator.core/0.1.0-preview.1 ~/.nuget/packages/csharp_ingeniousanalyzer/3.5.0-preview.1
+dotnet pack "$ROOT/XUnit_IngeniousGenerator.Core" -c Release -o "$OUT" | { grep -E "error|Successfully" || true; }
+rm -rf ~/.nuget/packages/xunit_ingeniousgenerator.core/0.1.0-preview.1 ~/.nuget/packages/csharp_ingeniousanalyzer/3.5.0-preview.1
 
 # dotnet pack だけでは古いビルドの dll が同梱されることがあるため、Release でビルドしてから --no-build で作る
 dotnet build "$ANALYZER/CSharp_IngeniousAnalyzer.csproj" -c Release | { grep -E "error|Error\(s\)" || true; }

@@ -433,6 +433,6 @@ FodyWeavers.xsd
 
 # ローカル専用ファイル（コミット対象外）
 key.cs
-# IngeniousXUnitGenerator
+# XUnit_IngeniousGenerator
 artifacts/
 samples/**/.packages/

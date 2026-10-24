@@ -1,4 +1,4 @@
-# IngeniousXUnitGenerator
+# XUnit_IngeniousGenerator
 
 ## このプロジェクトの目的
 
@@ -23,14 +23,14 @@ C#のクラス・メソッドから、xUnitのテストコードを**LLMを使�
 
 関心事を分離し、コアロジックは一つだけ持つ。入口はコアを呼ぶ薄い層にする。
 
-- **コアライブラリ**（`netstandard2.0`、Roslynによる構文・意味解析、テストコード生成、整形）: `IngeniousXUnitGenerator.Core`。
+- **コアライブラリ**（`netstandard2.0`、Roslynによる構文・意味解析、テストコード生成、整形）: `XUnit_IngeniousGenerator.Core`。
 - **入口A（主入口）: TEST001 / TEST002 の警告と Fix**（Analyzerパッケージとして配布）: TEST001 はテストが不足していて自動生成できるとき（テストファイルがなければクラス名、あればテストのない関数名）に出し、Fix で生成・追加する。TEST002 はテストがなく自動生成できない関数に理由つきで出し、Fix は Ignore だけ。どちらも既定で無効で、有効にした人だけが使う。警告のないところにメニューを出すリファクタリング（CodeRefactoringProvider）は、利用者を混乱させるため置かない。
 - **入口B（後回し）: dotnet tool（CLI）**: 例として `dotnet ingenious-xunit gen --project Foo.csproj --class Bar [--method Baz]`。CIでの利用など、必要になった時点で着手する。開発中の精度計測（実コードでまとめて生成し、要手動の件数を集計する）は、CLIではなく作業用スクリプトで行う。
 - **VSIX（右クリックメニュー）は当面作らない。** 必要になったら、コアまたはCLIを呼ぶ薄いラッパーとして最後に検討する。VS内蔵のRoslynとのアセンブリ競合を避けるため、コアは `netstandard2.0` にしている。
 
 コアのAPIは「クラスを渡すと、テストファイル1つ分のコードとレポートを返す」形を基本にする。メソッド単位の生成は、その部分実行として扱う。
 
-ソリューション構成: `IngeniousXUnitGenerator.Core`（NuGet パッケージ `IngeniousXUnitGenerator.Core`、当面は `artifacts/packages` のローカル配布）/ `.Cli`（引数の受け口のみ）/ `.Tests`。
+ソリューション構成: `XUnit_IngeniousGenerator.Core`（NuGet パッケージ `XUnit_IngeniousGenerator.Core`、当面は `artifacts/packages` のローカル配布）/ `.Cli`（引数の受け口のみ）/ `.Tests`。
 
 入口（警告 TEST001・TEST002 と Fix）は `CSharp_IngeniousAnalyzer` リポジトリの `Style_Test` に置き、Core パッケージを参照して Core.dll を同梱する。どちらも既定で無効。警告を出すかは Core の `TestCoverageInspector`（実際の生成と同じ計画の処理）で判定し、警告と Fix の結果を食い違わせない。テストプロジェクトのテストファイル（中身からテストメソッド名を読む）と csproj（Moq・Verify の参照を読む）は、同リポジトリの `build/CSharp_IngeniousAnalyzer.targets` が AdditionalFiles として渡す（既定は隣の「プロジェクト名.Tests」、`IngeniousTestProjectDirectory` で上書き）。関数のテストがあるかは、命名規約どおり「関数名_」で始まるテストメソッドがあるかで判定する。`samples/PlacementCheck` は、ローカルの CSharp_IngeniousAnalyzer パッケージ（3.5.0-preview.1）で TEST001 と生成を試すためのサンプルである。
 
@@ -93,7 +93,7 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 これから:
 
 - NuGet 公開前に、Windows 版 Visual Studio で、作成の Fix（独自の操作で csproj 作成と dotnet sln add まで行う）を確認する。
-- 公開前に IngeniousXUnitGenerator.Core を nuget.org に公開する（CSharp_IngeniousAnalyzer はローカルの Core を参照する nuget.config を持っているため、そのままでは GitHub 上のビルドが通らない）。
+- 公開前に XUnit_IngeniousGenerator.Core を nuget.org に公開する（CSharp_IngeniousAnalyzer はローカルの Core を参照する nuget.config を持っているため、そのままでは GitHub 上のビルドが通らない）。
 - CLI は、CI での利用など必要になった時点で着手する。
 
 ## IDE ごとの違い（実機で確認した事実）
