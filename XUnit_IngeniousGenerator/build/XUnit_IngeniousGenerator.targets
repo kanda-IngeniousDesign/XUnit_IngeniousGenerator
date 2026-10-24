@@ -1,0 +1,34 @@
+<Project>
+
+  <!--
+    TEST001・TEST002（テストコードの不足の検知）用。
+    アナライザーは自分のプロジェクトのコードしか見られないため、テストプロジェクトのテストファイル（*Tests.cs）と csproj を
+    AdditionalFiles として渡す。テストプロジェクトの場所は、既定では隣のフォルダの「プロジェクト名.Tests」とし、
+    csproj で IngeniousTestProjectDirectory を指定すればそちらを優先する。
+  -->
+  <PropertyGroup>
+    <IngeniousTestProjectDirectory Condition="'$(IngeniousTestProjectDirectory)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../$(MSBuildProjectName).Tests'))</IngeniousTestProjectDirectory>
+  </PropertyGroup>
+
+  <!--
+    テストプロジェクトのフォルダがまだなくても条件を付けずに登録する。
+    条件で外すと、Fix でテストプロジェクトを作ったあとも IDE がその場所を監視せず、警告が消えない。
+  -->
+  <ItemGroup>
+    <AdditionalFiles Include="$(IngeniousTestProjectDirectory)/**/*Tests.cs"
+                     Exclude="$(IngeniousTestProjectDirectory)/bin/**;$(IngeniousTestProjectDirectory)/obj/**"
+                     IngeniousTestFile="true"
+                     Visible="false" />
+    <!-- テストプロジェクトが Moq・Verify を参照しているか（生成できるテストの範囲が変わる）を判定するために渡す -->
+    <AdditionalFiles Include="$(IngeniousTestProjectDirectory)/*.csproj"
+                     IngeniousTestProjectFile="true"
+                     Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="IngeniousTestFile" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="IngeniousTestProjectFile" />
+    <CompilerVisibleProperty Include="IngeniousTestProjectDirectory" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CSharp_IngeniousAnalyzer と XUnit_IngeniousGenerator で共有する Roslyn の共通部品（"// Ignore" の判定・挿入など）。
+    両方のパッケージを入れたときに同じ名前の dll が衝突しないよう、dll ではなくソース（.cs）として配り、
+    それぞれのアセンブリに組み込ませる。このプロジェクトのビルドは、ソースがコンパイルできることの確認だけに使う
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>Roslyn_IngeniousCommon</RootNamespace>
+    <PackageId>Roslyn_IngeniousCommon</PackageId>
+    <Version>1.0.0</Version>
+    <Description>CSharp_IngeniousAnalyzer と XUnit_IngeniousGenerator が共有する Roslyn の共通部品（ソースのパッケージ）。"// Ignore &lt;ルールID&gt;" の判定・挿入と、自動生成ファイルの判定を含みます。</Description>
+    <PackageProjectUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- 参照したプロジェクトでコンパイルされるよう、ソースを contentFiles として入れる -->
+  <ItemGroup>
+    <Compile Update="@(Compile)">
+      <Pack>true</Pack>
+      <PackagePath>contentFiles/cs/any/Roslyn_IngeniousCommon/</PackagePath>
+      <BuildAction>Compile</BuildAction>
+    </Compile>
+  </ItemGroup>
+
+</Project>

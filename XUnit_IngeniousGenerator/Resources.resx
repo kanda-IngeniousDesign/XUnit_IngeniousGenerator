@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+
+  <data name="TEST001_Title"><value>Prevent untested classes by generating test code</value></data>
+  <data name="TEST001_Message"><value>No test code ({0}Tests) was found for the class '{0}'. Generate the test code with the Quick Fix.</value></data>
+  <data name="TEST001_MemberMessage"><value>'{0}' has no tests in {1}. Add the generated tests with the Quick Fix.</value></data>
+  <data name="TEST002_Title"><value>Make untestable members explicit</value></data>
+  <data name="TEST002_Message"><value>Tests for '{0}' cannot be generated automatically ({1}). Verify it another way, then ignore this warning.</value></data>
+</root>

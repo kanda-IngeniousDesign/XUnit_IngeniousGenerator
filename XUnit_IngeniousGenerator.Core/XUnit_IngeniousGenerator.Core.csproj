@@ -1,17 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- VS内蔵のRoslynとのアセンブリ競合を避けるため、RefactoringProviderからも読めるnetstandard2.0にする -->
+  <!--
+    テストコード生成のエンジン。単独のパッケージにはせず、XUnit_IngeniousGenerator（アナライザー）のパッケージに同梱する。
+    VS内蔵のRoslynから読み込まれるため netstandard2.0 にする
+  -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>XUnit_IngeniousGenerator.Core</RootNamespace>
-    <PackageId>XUnit_IngeniousGenerator.Core</PackageId>
-    <Version>0.1.0-preview.1</Version>
-    <Description>C#のクラスから、xUnitのテストコードをRoslynだけで決定的に生成するライブラリです（CSharp_IngeniousAnalyzer のテスト生成で使用）。</Description>
-    <PackageProjectUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <IsPackable>true</IsPackable>
-    <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

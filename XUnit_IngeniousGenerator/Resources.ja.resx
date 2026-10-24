@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+
+  <data name="TEST001_Title"><value>テストコードの生成によるテスト漏れの防止</value></data>
+  <data name="TEST001_Message"><value>クラス '{0}' のテストコード（{0}Tests）が見つかりません。クイックフィックスでテストコードを生成してください。</value></data>
+  <data name="TEST001_MemberMessage"><value>'{0}' のテストが {1} にありません。クイックフィックスでテストコードを追加してください。</value></data>
+  <data name="TEST002_Title"><value>自動生成できないテストの明示</value></data>
+  <data name="TEST002_Message"><value>'{0}' のテストコードは自動生成できません（{1}）。別の方法で確認したうえで、警告を Ignore してください。</value></data>
+</root>
