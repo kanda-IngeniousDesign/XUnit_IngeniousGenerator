@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 
 namespace IngeniousXUnitGenerator.Core;
@@ -51,5 +52,28 @@ public sealed class GenerationOptions
     {
         var names = new HashSet<string>(assemblyNames, StringComparer.OrdinalIgnoreCase);
         return new GenerationOptions(names.Contains("Moq"), names.Contains("Verify.Xunit"));
+    }
+
+    /// <summary>
+    /// テストプロジェクトの csproj の内容（PackageReference）から、使えるパッケージを判定する
+    /// （アナライザーはテストプロジェクトの参照を直接見られないため、csproj を読んで判定する）
+    /// </summary>
+    /// <param name="projectFileText">csproj の内容</param>
+    /// <returns>生成の設定</returns>
+    public static GenerationOptions FromProjectFile(string projectFileText)
+    {
+        return new GenerationOptions(HasPackageReference(projectFileText, "Moq"), HasPackageReference(projectFileText, "Verify.Xunit"));
+    }
+
+    /// <summary>
+    /// csproj に、指定のパッケージの PackageReference があるかを判定する
+    /// </summary>
+    /// <param name="projectFileText">csproj の内容</param>
+    /// <param name="packageId">パッケージID</param>
+    /// <returns>あればtrue</returns>
+    private static bool HasPackageReference(string projectFileText, string packageId)
+    {
+        var pattern = "<PackageReference\\s+[^>]*Include\\s*=\\s*\"" + Regex.Escape(packageId) + "\"";
+        return Regex.IsMatch(projectFileText, pattern, RegexOptions.IgnoreCase);
     }
 }

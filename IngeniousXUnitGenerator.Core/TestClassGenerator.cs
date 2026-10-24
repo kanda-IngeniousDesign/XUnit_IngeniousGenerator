@@ -99,7 +99,7 @@ public static class TestClassGenerator
     /// </summary>
     /// <param name="member">メンバー</param>
     /// <returns>対象ならtrue</returns>
-    private static bool IsTestTarget(IMethodSymbol member)
+    internal static bool IsTestTarget(IMethodSymbol member)
     {
         if (member.DeclaredAccessibility != Accessibility.Public || member.IsImplicitlyDeclared) return false;
 
