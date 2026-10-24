@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Core と CSharp_IngeniousAnalyzer をビルドし直し、すべてのサンプルに同じビルドを行き渡らせる。
-# 開発中は同じバージョン番号（0.1.0-dev / 3.5.0-dev）でパッケージを作り直すため、
+# 開発中は同じバージョン番号（0.1.0-preview.1 / 3.5.0-preview.1）でパッケージを作り直すため、
 # NuGet のキャッシュやサンプルの .packages に古いビルドが残ると、VS Code が古いアナライザーを読み込んでしまう
 # （同じ名前・同じバージョンのアセンブリは1つしか読み込まれない）。
 set -e
@@ -9,7 +9,7 @@ ANALYZER=${ROOT:h}/CSharp_IngeniousAnalyzer
 OUT=$ROOT/artifacts/packages
 
 dotnet pack "$ROOT/IngeniousXUnitGenerator.Core" -c Release -o "$OUT" | { grep -E "error|Successfully" || true; }
-rm -rf ~/.nuget/packages/ingeniousxunitgenerator.core/0.1.0-dev ~/.nuget/packages/csharp_ingeniousanalyzer/3.5.0-dev
+rm -rf ~/.nuget/packages/ingeniousxunitgenerator.core/0.1.0-preview.1 ~/.nuget/packages/csharp_ingeniousanalyzer/3.5.0-preview.1
 
 # dotnet pack だけでは古いビルドの dll が同梱されることがあるため、Release でビルドしてから --no-build で作る
 dotnet build "$ANALYZER/CSharp_IngeniousAnalyzer.csproj" -c Release | { grep -E "error|Error\(s\)" || true; }

@@ -32,7 +32,7 @@ C#のクラス・メソッドから、xUnitのテストコードを**LLMを使�
 
 ソリューション構成: `IngeniousXUnitGenerator.Core`（NuGet パッケージ `IngeniousXUnitGenerator.Core`、当面は `artifacts/packages` のローカル配布）/ `.Cli`（引数の受け口のみ）/ `.Tests`。
 
-入口（警告 TEST001・TEST002 と Fix）は `CSharp_IngeniousAnalyzer` リポジトリの `Style_Test` に置き、Core パッケージを参照して Core.dll を同梱する。どちらも既定で無効。警告を出すかは Core の `TestCoverageInspector`（実際の生成と同じ計画の処理）で判定し、警告と Fix の結果を食い違わせない。テストプロジェクトのテストファイル（中身からテストメソッド名を読む）と csproj（Moq・Verify の参照を読む）は、同リポジトリの `build/CSharp_IngeniousAnalyzer.targets` が AdditionalFiles として渡す（既定は隣の「プロジェクト名.Tests」、`IngeniousTestProjectDirectory` で上書き）。関数のテストがあるかは、命名規約どおり「関数名_」で始まるテストメソッドがあるかで判定する。`samples/PlacementCheck` は、ローカルの CSharp_IngeniousAnalyzer パッケージ（3.5.0-dev）で TEST001 と生成を試すためのサンプルである。
+入口（警告 TEST001・TEST002 と Fix）は `CSharp_IngeniousAnalyzer` リポジトリの `Style_Test` に置き、Core パッケージを参照して Core.dll を同梱する。どちらも既定で無効。警告を出すかは Core の `TestCoverageInspector`（実際の生成と同じ計画の処理）で判定し、警告と Fix の結果を食い違わせない。テストプロジェクトのテストファイル（中身からテストメソッド名を読む）と csproj（Moq・Verify の参照を読む）は、同リポジトリの `build/CSharp_IngeniousAnalyzer.targets` が AdditionalFiles として渡す（既定は隣の「プロジェクト名.Tests」、`IngeniousTestProjectDirectory` で上書き）。関数のテストがあるかは、命名規約どおり「関数名_」で始まるテストメソッドがあるかで判定する。`samples/PlacementCheck` は、ローカルの CSharp_IngeniousAnalyzer パッケージ（3.5.0-preview.1）で TEST001 と生成を試すためのサンプルである。
 
 Core やアナライザーを更新したら、`scripts/refresh-packages.sh` を実行する。開発中は同じバージョン番号でパッケージを作り直すため、NuGet のキャッシュやサンプルの `.packages` に古いビルドが残る。VS Code は同じ名前・同じバージョンのアナライザーを1つしか読み込まないため、どれか1つのサンプルに古いビルドが残っているだけで、古い動作になる（実際に、作成の Fix が出ない原因になった）。
 

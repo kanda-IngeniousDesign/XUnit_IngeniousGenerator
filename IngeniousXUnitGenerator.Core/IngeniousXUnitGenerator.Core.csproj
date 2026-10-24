@@ -5,7 +5,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>IngeniousXUnitGenerator.Core</RootNamespace>
     <PackageId>IngeniousXUnitGenerator.Core</PackageId>
-    <Version>0.1.0-dev</Version>
+    <Version>0.1.0-preview.1</Version>
     <Description>C#のクラスから、xUnitのテストコードをRoslynだけで決定的に生成するライブラリです（CSharp_IngeniousAnalyzer のテスト生成で使用）。</Description>
     <IsPackable>true</IsPackable>
     <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
