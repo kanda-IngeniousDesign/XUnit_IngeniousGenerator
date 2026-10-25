@@ -1,4 +1,6 @@
 <Solution>
+  <Project Path="Roslyn_IngeniousCommon/Roslyn_IngeniousCommon.csproj" />
+  <Project Path="XUnit_IngeniousGenerator/XUnit_IngeniousGenerator.csproj" />
   <Project Path="XUnit_IngeniousGenerator.Core/XUnit_IngeniousGenerator.Core.csproj" />
   <Project Path="XUnit_IngeniousGenerator.Cli/XUnit_IngeniousGenerator.Cli.csproj" />
   <Project Path="XUnit_IngeniousGenerator.Tests/XUnit_IngeniousGenerator.Tests.csproj" />

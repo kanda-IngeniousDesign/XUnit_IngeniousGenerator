@@ -13,6 +13,13 @@ internal static class DotnetTestRunner
 
     private static readonly Regex PassedLine = new(@"^\s+Passed\s+(?<name>[^\s(\[]+)", RegexOptions.Multiline);
 
+    // Verify（DiffEngine）が CI（ビルドサーバー）上と判定する環境変数
+    private static readonly string[] BuildServerVariables =
+    [
+        "CI", "GITHUB_ACTION", "GITHUB_ACTIONS", "TF_BUILD", "APPVEYOR", "TRAVIS_BUILD_ID", "JENKINS_URL",
+        "TEAMCITY_VERSION", "GITLAB_CI", "GO_SERVER_URL",
+    ];
+
     private const string ProjectFile = """
         <Project Sdk="Microsoft.NET.Sdk">
           <PropertyGroup>
@@ -47,6 +54,11 @@ internal static class DotnetTestRunner
             RedirectStandardError = true,
             WorkingDirectory = directory,
         };
+
+        // 生成したスナップショットのテストは、CI では初回の自動記録をしない（記録がなければ失敗させる）作りのため、
+        // CI 上でこのテスト自体を動かすときは、中で起動する dotnet test から CI の環境変数を外す
+        foreach (var name in BuildServerVariables) startInfo.Environment.Remove(name);
+
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("dotnet test を起動できません。");
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore XUnit_IngeniousGenerator.Tests/XUnit_IngeniousGenerator.Tests.csproj
+
+      - name: Build
+        run: dotnet build XUnit_IngeniousGenerator.Tests/XUnit_IngeniousGenerator.Tests.csproj --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test XUnit_IngeniousGenerator.Tests/XUnit_IngeniousGenerator.Tests.csproj --no-build --configuration Release --logger "console;verbosity=normal"

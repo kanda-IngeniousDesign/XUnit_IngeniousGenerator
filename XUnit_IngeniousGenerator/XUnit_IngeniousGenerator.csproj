@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    テストコード生成のパッケージ。TEST001・TEST002 の警告と Fix（アナライザー）に、生成エンジン（Core）を同梱する。
+    VS 内蔵の Roslyn から読み込まれるため netstandard2.0 にする
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <RootNamespace>XUnit_IngeniousGenerator</RootNamespace>
+    <AssemblyName>XUnit_IngeniousGenerator</AssemblyName>
+    <PackageId>XUnit_IngeniousGenerator</PackageId>
+    <Version>0.1.0-preview.1</Version>
+    <Description>C#のコードから、xUnitのテストコードをRoslynだけで決定的に生成します（LLM不要）。TEST001でテストの不足を警告し、クイックフィックスで生成します。TEST002は自動生成できない関数を理由つきで知らせます。どちらも既定で無効で、.editorconfigで有効にします。</Description>
+    <PackageProjectUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>xunit;test;generator;roslyn;analyzer</PackageTags>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
+    <PackageReference Include="CSharp_IngeniousAnalyzer" Version="3.4.0" PrivateAssets="all" />
+    <ProjectReference Include="..\XUnit_IngeniousGenerator.Core\XUnit_IngeniousGenerator.Core.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- CSharp_IngeniousAnalyzer と共有する部品（同じリポジトリにあるため、パッケージではなくソースを直接取り込む） -->
+  <ItemGroup>
+    <Compile Include="..\Roslyn_IngeniousCommon\*.cs" LinkBase="Roslyn_IngeniousCommon" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="build\XUnit_IngeniousGenerator.targets" Pack="true" PackagePath="build/" />
+
+    <!-- ホスト（VS / VS Code）は生成エンジンを持っていないため、アナライザーと同じフォルダに同梱する -->
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
+    <None Include="$(OutputPath)\XUnit_IngeniousGenerator.Core.dll" Pack="true" PackagePath="analyzers/dotnet/cs/" Visible="false" />
+    <None Include="$(OutputPath)\ja\$(AssemblyName).resources.dll" Pack="true" PackagePath="analyzers/dotnet/cs/ja/" Visible="false" />
+  </ItemGroup>
+
+</Project>

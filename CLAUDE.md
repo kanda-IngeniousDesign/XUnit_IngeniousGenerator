@@ -24,17 +24,19 @@ C#のクラス・メソッドから、xUnitのテストコードを**LLMを使�
 関心事を分離し、コアロジックは一つだけ持つ。入口はコアを呼ぶ薄い層にする。
 
 - **コアライブラリ**（`netstandard2.0`、Roslynによる構文・意味解析、テストコード生成、整形）: `XUnit_IngeniousGenerator.Core`。
-- **入口A（主入口）: TEST001 / TEST002 の警告と Fix**（Analyzerパッケージとして配布）: TEST001 はテストが不足していて自動生成できるとき（テストファイルがなければクラス名、あればテストのない関数名）に出し、Fix で生成・追加する。TEST002 はテストがなく自動生成できない関数に理由つきで出し、Fix は Ignore だけ。どちらも既定で無効で、有効にした人だけが使う。警告のないところにメニューを出すリファクタリング（CodeRefactoringProvider）は、利用者を混乱させるため置かない。
+- **入口A（主入口）: TEST001 / TEST002 の警告と Fix**（`XUnit_IngeniousGenerator` パッケージとして配布）: TEST001 はテストが不足していて自動生成できるとき（テストファイルがなければクラス名、あればテストのない関数名）に出し、Fix で生成・追加する。TEST002 はテストがなく自動生成できない関数に理由つきで出し、Fix は Ignore だけ。どちらも既定で無効で、有効にした人だけが使う。警告のないところにメニューを出すリファクタリング（CodeRefactoringProvider）は、利用者を混乱させるため置かない。
 - **入口B（後回し）: dotnet tool（CLI）**: 例として `dotnet ingenious-xunit gen --project Foo.csproj --class Bar [--method Baz]`。CIでの利用など、必要になった時点で着手する。開発中の精度計測（実コードでまとめて生成し、要手動の件数を集計する）は、CLIではなく作業用スクリプトで行う。
 - **VSIX（右クリックメニュー）は当面作らない。** 必要になったら、コアまたはCLIを呼ぶ薄いラッパーとして最後に検討する。VS内蔵のRoslynとのアセンブリ競合を避けるため、コアは `netstandard2.0` にしている。
 
 コアのAPIは「クラスを渡すと、テストファイル1つ分のコードとレポートを返す」形を基本にする。メソッド単位の生成は、その部分実行として扱う。
 
-ソリューション構成: `XUnit_IngeniousGenerator.Core`（NuGet パッケージ `XUnit_IngeniousGenerator.Core`、当面は `artifacts/packages` のローカル配布）/ `.Cli`（引数の受け口のみ）/ `.Tests`。
+ソリューション構成: `XUnit_IngeniousGenerator`（アナライザー。NuGet パッケージ `XUnit_IngeniousGenerator` で、Core.dll を同梱する）/ `XUnit_IngeniousGenerator.Core`（生成エンジン。単独のパッケージにはしない）/ `Roslyn_IngeniousCommon`（CSharp_IngeniousAnalyzer と共有する部品。ソースのパッケージ）/ `.Cli`（引数の受け口のみ）/ `.Tests`。
 
-入口（警告 TEST001・TEST002 と Fix）は `CSharp_IngeniousAnalyzer` リポジトリの `Style_Test` に置き、Core パッケージを参照して Core.dll を同梱する。どちらも既定で無効。警告を出すかは Core の `TestCoverageInspector`（実際の生成と同じ計画の処理）で判定し、警告と Fix の結果を食い違わせない。テストプロジェクトのテストファイル（中身からテストメソッド名を読む）と csproj（Moq・Verify の参照を読む）は、同リポジトリの `build/CSharp_IngeniousAnalyzer.targets` が AdditionalFiles として渡す（既定は隣の「プロジェクト名.Tests」、`IngeniousTestProjectDirectory` で上書き）。関数のテストがあるかは、命名規約どおり「関数名_」で始まるテストメソッドがあるかで判定する。`samples/PlacementCheck` は、ローカルの CSharp_IngeniousAnalyzer パッケージ（3.5.0-preview.1）で TEST001 と生成を試すためのサンプルである。
+静的解析の `CSharp_IngeniousAnalyzer` とは別のパッケージにする（2026-10-24 決定）。Analyzer はコードレビューの指摘をこれまでの規模で増やし、テストコード生成は「生成のための解析（TEST001・TEST002）」も含めてこちらで持つ。Roslyn を使う解析だからといって Analyzer に入れる必要はない。両方に必要な部品（`// Ignore` の判定・挿入、自動生成ファイルの判定）は、コピーせず `Roslyn_IngeniousCommon` にまとめ、dll ではなくソース（contentFiles）として配る（dll にすると、両方のパッケージを入れたときに同じ名前の dll が衝突するため）。このリポジトリ内ではソースを直接取り込み、CSharp_IngeniousAnalyzer は nuget.org のパッケージを参照する。
 
-Core やアナライザーを更新したら、`scripts/refresh-packages.sh` を実行する。開発中は同じバージョン番号でパッケージを作り直すため、NuGet のキャッシュやサンプルの `.packages` に古いビルドが残る。VS Code は同じ名前・同じバージョンのアナライザーを1つしか読み込まないため、どれか1つのサンプルに古いビルドが残っているだけで、古い動作になる（実際に、作成の Fix が出ない原因になった）。
+警告を出すかは Core の `TestCoverageInspector`（実際の生成と同じ計画の処理）で判定し、警告と Fix の結果を食い違わせない。テストプロジェクトのテストファイル（中身からテストメソッド名を読む）と csproj（Moq・Verify の参照を読む）は、パッケージ同梱の `build/XUnit_IngeniousGenerator.targets` が AdditionalFiles として渡す（既定は隣の「プロジェクト名.Tests」、`IngeniousTestProjectDirectory` で上書き）。関数のテストがあるかは、命名規約どおり「関数名_」で始まるテストメソッドがあるかで判定する。`samples/PlacementCheck` は、ローカルで作った XUnit_IngeniousGenerator パッケージで TEST001・TEST002 と生成を試すためのサンプルである。
+
+Core やアナライザーを更新したら、`scripts/refresh-packages.sh` を実行する。開発中は同じバージョン番号でパッケージを作り直すため、NuGet のキャッシュやサンプルの `.packages` に古いビルドが残る。VS Code は同じ名前・同じバージョンのアナライザーを1つしか読み込まないため、古いビルドが残っているだけで古い動作になる（実際に、作成の Fix が出ない原因になった）。
 
 ## 生成する内容（LLMなしで機械的に出せる範囲）
 
@@ -68,7 +70,7 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 ## 既存資産との接続
 
 - 生成した入力パターンを、そのまま**パターン一覧**として出力できるようにし、xUnitとUIオーケストレーターで同じ一覧を共有する（単体で担保済みか、UI側で担保するかの対応づけに使う）。
-- 生成物の品質ルール（Assertなし、命名規約違反、`Thread.Sleep`、未記入マーカー残り）は、`CSharp_IngeniousAnalyzer` にテストコード向けルールとして追加し、同じ仕組みで効かせる。
+- 生成物の品質ルール（Assertなし、命名規約違反、`Thread.Sleep`、未記入マーカー残り）は、テストコード向けルールとして、このパッケージに追加する。
 
 ## 進捗と今後の順序
 
@@ -79,7 +81,7 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 3. 例外系の生成: メソッド先頭に連続するガード（`if (...) throw new T(...)`、`ThrowIf～` 系、`?? throw`）から `Assert.Throws<T>` とParamNameの確認を生成する。それ以外は「要手動」としてコメントとレポートに残す。生成したテストは、対象と一緒にコンパイル・実行して成功することを自動テストで確かめている。
 4. 戻り値のテスト（静的に計算できるもの）: 本体の比較・パターン・ガードの定数から境界値を作り、ツールがコードを解釈して期待値を計算する（int / long / double / decimal / bool / string、if・switch 式・三項・代入・一部の標準メソッド）。
 5. 戻り値のテスト（実行して記録するもの）: 静的に計算できない場合は Verify でスナップショットを記録する（初回だけ自動記録、CI では自動記録しない）。インターフェースの依存は Moq で自動モックする。テストプロジェクトが Verify.Xunit / Moq を参照している場合だけ使い、参照していなければ「要手動」に追加方法を書く。時刻・乱数・ファイル・DB などを直接使うメソッドは「生成不可」として報告する。
-6. TEST001（テストコードがないクラスの警告、既定は無効）と Fix・電球メニューを CSharp_IngeniousAnalyzer に実装（`feature/test001-missing-test` ブランチ）。テストプロジェクトがなければ Fix で作成する。VS Code で、警告 → 作成 → 警告が消える、テストがある場合の生成 → 警告が消える、生成したテストが dotnet test で成功、までを確認済み。
+6. TEST001（テストコードがないクラスの警告、既定は無効）と Fix・電球メニューを実装（当初は CSharp_IngeniousAnalyzer に置いた。16 で分離）。テストプロジェクトがなければ Fix で作成する。VS Code で、警告 → 作成 → 警告が消える、テストがある場合の生成 → 警告が消える、生成したテストが dotnet test で成功、までを確認済み。
 7. 既存のテストファイルへのマージ（名前がまだないメンバーと using だけを構文操作で追加し、既存のメンバーには触れない。改行コード・字下げは既存ファイルに合わせる）。
 8. メソッド単位の生成（当初は電球メニューのリファクタリングで実装。15 で、関数名の TEST001 の Fix に置き換えた）。
 9. 例外が出ないことの確認：戻り値がないメソッド（void / Task）と、時刻・乱数で戻り値が変わるメソッドは、境界値の入力で `Record.Exception` が null であることを確かめる。ファイル・DB・通信を使うメソッドは環境で失敗するため「生成不可」のまま。
@@ -89,21 +91,22 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 13. プロパティの set アクセサー：先頭のガード（if-throw・ThrowIf～・`set => _x = value ?? throw ...`）から `_sut.P = 値` の例外テストを生成する（init と public でない set は対象外）。
 14. 具象クラスの依存：引数なしコンストラクタがないクラスは、そのコンストラクタのガードを通過する値で入れ子に組み立てる（`new Checker(new Options(new TaxRate(1m), "a"))`、深さ3まで、ソースにある public なクラスだけ）。テスト対象は null を渡さずに作れる方法を優先し、どうしても null になる引数は要手動に記録する。
 15. 警告の作り直し：TEST001 は自動生成できるテストが不足しているときだけ出す（テストファイルがなければクラス名、あればテストのない関数名。Fix はその関数のテストだけを追加）。TEST002（新設）は、テストがなく自動生成できない関数に理由つきで出し、Fix で `// Ignore TEST002` を挿入して人間の判断として残す。リファクタリングの電球メニューは削除した。
+16. パッケージの分離：TEST001・TEST002 を CSharp_IngeniousAnalyzer から `XUnit_IngeniousGenerator` パッケージ（生成エンジンを同梱）に移した。共通部品は `Roslyn_IngeniousCommon`（ソースのパッケージ）にまとめ、CSharp_IngeniousAnalyzer もこれを使う。テストプロジェクトの作成は、IDE によらず追加ファイルとして作る1通りにした。
 
 これから:
 
-- NuGet 公開前に、Windows 版 Visual Studio で、作成の Fix（独自の操作で csproj 作成と dotnet sln add まで行う）を確認する。
-- 公開前に XUnit_IngeniousGenerator.Core を nuget.org に公開する（CSharp_IngeniousAnalyzer はローカルの Core を参照する nuget.config を持っているため、そのままでは GitHub 上のビルドが通らない）。
+- 会社の Windows 版 Visual Studio で、プレリリース版（0.1.0-preview.1）を試す。特に、テストプロジェクトの作成の Fix（VS Code と同じく、追加ファイルとして csproj とテストファイルを作る）が VS でも動くか。動かなければ、IDE ごとの分岐を戻す。問題がなければ正式版を出す。
+- テストの理由文（TEST002 のメッセージの中身）は日本語だけ。英語の環境向けに英語の理由文を用意するかは、正式版までに決める。
 - CLI は、CI での利用など必要になった時点で着手する。
 
 ## IDE ごとの違い（実機で確認した事実）
 
-- Roslyn の言語サーバー（VS Code）は、コード修正の操作のうち ApplyChangesOperation しか反映しない（独自の CodeActionOperation はログに "Skipping" と出して読み飛ばす）。そのため、テストプロジェクトの作成は、VS では独自の操作（ファイル作成と dotnet sln add）、VS Code では追加ファイル（AdditionalDocument）として csproj とテストファイルを作らせる（ソリューションへの追加だけ手動、コマンドを Fix のタイトルとテストファイル先頭のコメントで案内）。判定はワークスペースの型名（`.LanguageServer.` を含むか）で行う。
+- Roslyn の言語サーバー（VS Code）は、コード修正の操作のうち ApplyChangesOperation しか反映しない（独自の CodeActionOperation はログに "Skipping" と出して読み飛ばす）。そのため、テストプロジェクトの作成は、追加ファイル（AdditionalDocument）として csproj とテストファイルを作らせる（ソリューションへの追加だけ手動、コマンドを Fix のタイトルとテストファイル先頭のコメントで案内）。当初は VS 向けに独自の操作（ファイル作成と dotnet sln add）も持っていたが、IDE ごとの分岐を避けるため、まずはこの1通りで VS も試す。
 - VS Code（C# Dev Kit）の Solution.FilePath は、Dev Kit が内部で生成したソリューション（workspaceStorage 内）を指す。利用者のソリューションは、プロダクトのプロジェクトから上へたどって探す。
 - targets の AdditionalFiles を「テストプロジェクトのフォルダがあれば」という条件で囲むと、後から作ったテストプロジェクトを IDE が監視せず、警告が消えない。条件を付けずに常に登録する。
-- 言語サーバーは同じタイトルのアクションを1つにまとめる。範囲を選んだ要求（ホバーの「クイック フィックス」）ではリファクタリングが先に並ぶため、Fix とリファクタリングが同じタイトルだと、クイックフィックスの一覧から Fix が消える。Fix とリファクタリングのタイトルは必ず変える。
+- 言語サーバーは同じタイトルのアクションを1つにまとめる。範囲を選んだ要求（ホバーの「クイック フィックス」）ではリファクタリングが先に並ぶため、Fix とリファクタリングが同じタイトルだと、クイックフィックスの一覧から Fix が消える（リファクタリングは削除したが、再び置く場合はタイトルを必ず変える）。
 - VS Code は同じ名前・同じバージョンのアナライザーを1つしか読み込まない。開発中は `scripts/refresh-packages.sh` で全サンプルを同じビルドにそろえる。
 
 ## 進め方
 
-Claude Codeとは、設計判断が分かれる箇所（特に戻り値の期待値の扱い）を相談しながら、小さく作って動かす形で進めたい。コードのスタイルは既存の `CSharp_IngeniousAnalyzer` に合わせる。CoreとAnalyzersは `CSharp_IngeniousAnalyzer` を参照しており、自分自身のルール（COMM001の関数ヘッダー、COMP001の不等号の向きなど）が効く。
+Claude Codeとは、設計判断が分かれる箇所（特に戻り値の期待値の扱い）を相談しながら、小さく作って動かす形で進めたい。コードのスタイルは既存の `CSharp_IngeniousAnalyzer` に合わせる。Core とアナライザーは `CSharp_IngeniousAnalyzer` を参照しており、そのルール（COMM001の関数ヘッダー、COMP001の不等号の向きなど）が効く。
