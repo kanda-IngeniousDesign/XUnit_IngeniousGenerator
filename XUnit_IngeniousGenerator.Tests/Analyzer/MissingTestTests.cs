@@ -85,6 +85,73 @@ public class MissingTestTests
     }
 
     /// <summary>
+    /// テストのないコンストラクタ・プロパティの setter にも、その名前に診断が出ることを確認する
+    /// </summary>
+    [Fact]
+    public async Task ConstructorAndPropertySetterWithoutTests_ReportDiagnosticOnTheirNames()
+    {
+        var test = CreateTest("""
+            public class Calculator
+            {
+                private int _limit;
+
+                public {|#0:Calculator|}(int limit)
+                {
+                    if (limit < 0) throw new System.ArgumentOutOfRangeException(nameof(limit));
+                    _limit = limit;
+                }
+
+                public int {|#1:Limit|}
+                {
+                    get => _limit;
+                    set
+                    {
+                        if (value < 0) throw new System.ArgumentOutOfRangeException(nameof(value));
+                        _limit = value;
+                    }
+                }
+
+                public int Add(int a, int b) => a + b;
+            }
+            """, EnableRuleWithTestFile);
+        test.TestState.AdditionalFiles.Add((TestFilePath, "public class CalculatorTests { public void Add_BoundaryValues_ReturnsExpected() { } }"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments("Calculator", "CalculatorTests"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(1).WithArguments("Limit", "CalculatorTests"));
+
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// 字下げのない宣言（直前が説明コメントだけ）でも、Ignore の Fix がコメントの下に「// Ignore TEST001」を挿入することを確認する
+    /// </summary>
+    [Fact]
+    public async Task IgnoreFix_DeclarationWithoutIndent_InsertsCommentBelowExistingComment()
+    {
+        var test = new CSharpCodeFixTest<MissingTest, MissingTestFix, DefaultVerifier>
+        {
+            TestCode = """
+                // 計算
+                public class {|#0:Calculator|}
+                {
+                    public int Add(int a, int b) => a + b;
+                }
+                """,
+            FixedCode = """
+                // 計算
+                // Ignore TEST001
+                public class Calculator
+                {
+                    public int Add(int a, int b) => a + b;
+                }
+                """,
+        };
+        test.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", EnableRule));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments("Calculator"));
+
+        await test.RunAsync();
+    }
+
+    /// <summary>
     /// 自動生成できない関数には、理由とともに TEST002 が出て、TEST001 は出ないことを確認する
     /// （Ignore TEST002 を付けた関数には出ない）
     /// </summary>

@@ -30,6 +30,31 @@ public class GenerateTestFixTests
         }
         """;
 
+    private const string GaugeSource = """
+        using System;
+        namespace Product.Domain;
+        public class Gauge
+        {
+            private int _limit;
+
+            public Gauge(int limit)
+            {
+                if (limit < 0) throw new ArgumentOutOfRangeException(nameof(limit));
+                _limit = limit;
+            }
+
+            public int Limit
+            {
+                get => _limit;
+                set
+                {
+                    if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
+                    _limit = value;
+                }
+            }
+        }
+        """;
+
     private static readonly MetadataReference CorLib = MetadataReference.CreateFromFile(typeof(object).Assembly.Location);
     private static readonly MetadataReference XUnitCore = MetadataReference.CreateFromFile(typeof(FactAttribute).Assembly.Location);
 
@@ -150,16 +175,41 @@ public class GenerateTestFixTests
         Assert.Contains("    // Ignore TEST002\n    public int Twice(int value)", (await document.GetTextAsync()).ToString());
     }
 
+    /// <summary>
+    /// コンストラクタ名・プロパティ名の TEST001 でも、そのメンバーのテストだけを既存のテストファイルに追加することを確認する
+    /// （コンストラクタ名はクラス名と同じため、2つ目の出現を警告の位置にする）
+    /// </summary>
+    [Theory]
+    [InlineData("Gauge", 1, "Constructor_LimitIsMinus1_ThrowsArgumentOutOfRangeException", "Limit_")]
+    [InlineData("Limit", 0, "Limit_ValueIsMinus1_ThrowsArgumentOutOfRangeException", "Constructor_")]
+    public async Task Fix_OnConstructorOrPropertySetter_AddsTestsForThatMemberOnly(string identifierText, int occurrence, string expectedTest, string unexpectedPrefix)
+    {
+        using var workspace = new AdhocWorkspace();
+        var product = AddProductProject(workspace, GaugeSource, "Gauge.cs");
+        var tests = AddProject(workspace, "Product.Tests", [CorLib, XUnitCore], product.Id);
+        var existing = workspace.AddDocument(DocumentInfo.Create(
+            DocumentId.CreateNewId(tests.Id), "GaugeTests.cs", ["Domain"],
+            loader: TextLoader.From(TextAndVersion.Create(
+                SourceText.From("namespace Product.Tests.Domain;\n\npublic class GaugeTests\n{\n}\n"), VersionStamp.Create()))));
+
+        var actions = await ComputeFixesAsync(workspace, identifierText, MissingTest.MemberRule, occurrence);
+
+        Assert.Equal("Fix : この関数のテストコードを追加する（Product.Tests）", actions[0].Title);
+        var merged = (await (await ApplyAsync(actions[0])).GetDocument(existing.Id)!.GetTextAsync()).ToString();
+        Assert.Contains(expectedTest, merged);
+        Assert.DoesNotContain(unexpectedPrefix, merged);
+    }
+
     private static Task<List<CodeAction>> ComputeFixesAsync(AdhocWorkspace workspace)
     {
         return ComputeFixesAsync(workspace, "Calculator", new MissingTest().SupportedDiagnostics[0]);
     }
 
-    private static async Task<List<CodeAction>> ComputeFixesAsync(AdhocWorkspace workspace, string identifierText, DiagnosticDescriptor descriptor)
+    private static async Task<List<CodeAction>> ComputeFixesAsync(AdhocWorkspace workspace, string identifierText, DiagnosticDescriptor descriptor, int occurrence = 0)
     {
         var document = GetCalculatorDocument(workspace);
         var root = (await document.GetSyntaxRootAsync())!;
-        var identifier = root.DescendantTokens().First(t => t.ValueText == identifierText);
+        var identifier = root.DescendantTokens().Where(t => t.ValueText == identifierText).ElementAt(occurrence);
         var diagnostic = Diagnostic.Create(descriptor, identifier.GetLocation(), identifierText, "x");
 
         var actions = new List<CodeAction>();
@@ -179,13 +229,13 @@ public class GenerateTestFixTests
         return workspace.CurrentSolution.Projects.Single(p => p.Name == "Product").Documents.Single();
     }
 
-    private static Project AddProductProject(AdhocWorkspace workspace)
+    private static Project AddProductProject(AdhocWorkspace workspace, string source = CalculatorSource, string fileName = "Calculator.cs")
     {
         var project = AddProject(workspace, "Product", [CorLib]);
         workspace.AddDocument(DocumentInfo.Create(
-            DocumentId.CreateNewId(project.Id), "Calculator.cs", ["Domain"],
-            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(CalculatorSource), VersionStamp.Create())),
-            filePath: Path.Combine("/src", "Product", "Domain", "Calculator.cs")));
+            DocumentId.CreateNewId(project.Id), fileName, ["Domain"],
+            loader: TextLoader.From(TextAndVersion.Create(SourceText.From(source), VersionStamp.Create())),
+            filePath: Path.Combine("/src", "Product", "Domain", fileName)));
         return project;
     }
 
