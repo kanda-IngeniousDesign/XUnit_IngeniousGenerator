@@ -16,7 +16,7 @@ public class MissingTestTests
 {
     private const string TestFilePath = "/0/Product.Tests/CalculatorTests.cs";
 
-    // 既定では無効のため、テストでは globalconfig で有効にする。テストプロジェクトのファイルには targets と同じメタデータを付ける
+    // 既定で有効だが、テストでは globalconfig で明示する。テストプロジェクトのファイルには targets と同じメタデータを付ける
     private const string EnableRule = """
         is_global = true
         dotnet_diagnostic.TEST001.severity = warning
@@ -175,12 +175,12 @@ public class MissingTestTests
     }
 
     /// <summary>
-    /// TEST001・TEST002 は、設定で重大度を none 以外にした場合だけ有効と判定することを確認する
-    /// （無効なら判定の処理自体を行わない。テストライブラリは既定で無効なルールも有効にして実行するため、判定を直接確かめる）
+    /// TEST001・TEST002 は既定で有効で、設定で重大度を none にした場合だけ無効と判定することを確認する
+    /// （無効なら判定の処理自体を行わない）
     /// </summary>
     [Theory]
-    [InlineData(null, false)]
-    [InlineData(ReportDiagnostic.Default, false)]
+    [InlineData(null, true)]
+    [InlineData(ReportDiagnostic.Default, true)]
     [InlineData(ReportDiagnostic.Suppress, false)]
     [InlineData(ReportDiagnostic.Warn, true)]
     [InlineData(ReportDiagnostic.Info, true)]
@@ -212,15 +212,14 @@ public class MissingTestTests
     }
 
     /// <summary>
-    /// 既存のプロジェクトで大量に出ないよう、既定では無効（.editorconfig で有効にする）であることを確認する
-    /// （テストライブラリは既定で無効なルールも有効にして実行するため、ルールの設定値で確認する）
+    /// パッケージを入れれば使えるよう、既定で有効（.editorconfig で none にすれば止められる）であることを確認する
     /// </summary>
     [Fact]
-    public void Rule_IsDisabledByDefault()
+    public void Rule_IsEnabledByDefault()
     {
         foreach (var descriptor in new MissingTest().SupportedDiagnostics)
         {
-            Assert.False(descriptor.IsEnabledByDefault);
+            Assert.True(descriptor.IsEnabledByDefault);
             Assert.Equal(DiagnosticSeverity.Warning, descriptor.DefaultSeverity);
         }
     }

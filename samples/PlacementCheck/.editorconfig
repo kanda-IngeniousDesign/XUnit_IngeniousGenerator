@@ -1,4 +1,4 @@
 [*.cs]
-# サンプルでは TEST001（自動生成できるテストの不足）と TEST002（自動生成できない関数）を有効にする（既定では無効）
+# TEST001（自動生成できるテストの不足）と TEST002（自動生成できない関数）は既定で有効。サンプルでは明示しておく
 dotnet_diagnostic.TEST001.severity = warning
 dotnet_diagnostic.TEST002.severity = warning

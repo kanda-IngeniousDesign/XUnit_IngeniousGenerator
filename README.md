@@ -2,14 +2,14 @@
 
 Generates xUnit tests from C# code deterministically with Roslyn — no LLM, no external services.
 
-Install the `XUnit_IngeniousGenerator` package in the project under test and enable the rules in `.editorconfig`. Both rules are **disabled by default**; while they are disabled, nothing is analyzed.
+Install the `XUnit_IngeniousGenerator` package in the project under test. Both rules are **enabled by default**, since installing this package is the opt-in. To turn a rule off, set its severity to `none` in `.editorconfig`; while it is off, nothing is analyzed.
 
 ```
-dotnet_diagnostic.TEST001.severity = warning
-dotnet_diagnostic.TEST002.severity = warning
+dotnet_diagnostic.TEST001.severity = none
+dotnet_diagnostic.TEST002.severity = none
 ```
 
-- **TEST001** is reported only when the Quick Fix can actually generate tests. If the test project has no test file (`XxxTests.cs`) for the class, it is reported on the class name and the Quick Fix generates the test file (creating the test project if needed; add it to the solution with `dotnet sln add`). If the test file exists, it is reported on each public method, constructor or property setter that has no test (no test method named `MemberName_...`), and the Quick Fix adds the tests for that member only. Existing test methods are never changed.
+- **TEST001** is reported only when the Quick Fix can actually generate tests. If the test project has no test file (`XxxTests.cs`) for the class, it is reported on the class name and the Quick Fix generates the test file (creating the test project if needed; Visual Studio adds it to the solution, while on VS Code add it with `dotnet sln add`). If the test file exists, it is reported on each public method, constructor or property setter that has no test (no test method named `MemberName_...`), and the Quick Fix adds the tests for that member only. Existing test methods are never changed.
 - **TEST002** is reported on members without tests whose tests cannot be generated automatically (for example, members that use files, databases or the network), with the reason. Verify such members another way, then suppress the warning with the Quick Fix, which inserts `// Ignore TEST002` before the member.
 
 Generated tests:
@@ -27,9 +27,9 @@ This package is independent of [CSharp_IngeniousAnalyzer](https://github.com/kan
 
 C#のコードから、xUnitのテストコードをRoslynだけで決定的に生成します（LLMや外部サービスは使いません）。
 
-テスト対象のプロジェクトに `XUnit_IngeniousGenerator` パッケージを追加し、`.editorconfig` で上記の2つのルールを有効にしてください。どちらも**既定では無効**で、無効の間は解析もしません。
+テスト対象のプロジェクトに `XUnit_IngeniousGenerator` パッケージを追加してください。このパッケージを入れること自体がテスト生成を使う意思表示なので、2つのルールはどちらも**既定で有効**です。止めたい場合は、`.editorconfig` で上記のように重大度を `none` にしてください。無効の間は解析もしません。
 
-- **TEST001** は、クイックフィックスで実際にテストを生成できる場合だけ報告します。テストファイル（`XxxTests.cs`）がなければクラス名に報告し、クイックフィックスでテストファイルを生成します（テストプロジェクトがなければ作成します。ソリューションへの追加は `dotnet sln add` で行ってください）。テストファイルがあれば、テストのない（「メンバー名_」で始まるテストメソッドがない）publicなメソッド・コンストラクタ・プロパティのsetterに報告し、クイックフィックスでそのメンバーのテストだけを追加します。既存のテストメソッドは変更しません。
+- **TEST001** は、クイックフィックスで実際にテストを生成できる場合だけ報告します。テストファイル（`XxxTests.cs`）がなければクラス名に報告し、クイックフィックスでテストファイルを生成します（テストプロジェクトがなければ作成します。Visual Studio ではソリューションにも追加し、VS Code では `dotnet sln add` で追加してください）。テストファイルがあれば、テストのない（「メンバー名_」で始まるテストメソッドがない）publicなメソッド・コンストラクタ・プロパティのsetterに報告し、クイックフィックスでそのメンバーのテストだけを追加します。既存のテストメソッドは変更しません。
 - **TEST002** は、テストがなく、自動では生成できないメンバー（ファイル・DB・通信を使うものなど）に、理由とともに報告します。別の方法で確認したうえで、クイックフィックスで `// Ignore TEST002` を挿入して警告を消します。
 
 テストプロジェクトは、既定では隣のフォルダの「プロジェクト名.Tests」を探します。別の場所にある場合は、csprojで `IngeniousTestProjectDirectory` プロパティを指定してください。プロダクトコードは書き換えません。

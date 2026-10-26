@@ -8,7 +8,8 @@ using XUnit_IngeniousGenerator.Core;
 
 namespace XUnit_IngeniousGenerator;
 
-// テストコードの不足を検知する。既存のプロジェクトでは大量に出るため、既定では無効にしている。
+// テストコードの不足を検知する。このパッケージを入れること自体がテスト生成を使う意思表示なので、既定で有効にしている
+// （止めたい場合は .editorconfig で重大度を none にする）。
 // ・TEST001: 自動で生成できるテストが不足している。テストファイルがなければクラス名に、あればテストのない関数名に出し、Fix で生成する
 // ・TEST002: テストがなく、自動では生成できない関数（理由を表示する）。別の方法で確認したうえで Ignore してもらう
 // 判定は Core の TestCoverageInspector（実際の生成と同じ計画の処理）で行い、警告と Fix の結果が食い違わないようにする。
@@ -42,16 +43,16 @@ public class MissingTest : DiagnosticAnalyzer
 
     /// <summary>TEST001 のうち、テストファイルがないクラス</summary>
     public static DiagnosticDescriptor ClassRule { get; } = new(
-        DiagnosticId, Title, MessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: false);
+        DiagnosticId, Title, MessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
 
     /// <summary>TEST001 のうち、テストファイルはあるが、関数のテストが不足しているもの</summary>
     public static DiagnosticDescriptor MemberRule { get; } = new(
-        DiagnosticId, Title, MemberMessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: false);
+        DiagnosticId, Title, MemberMessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
     /// <summary>TEST002: テストがなく、自動では生成できない関数</summary>
     public static DiagnosticDescriptor NotGeneratableRule { get; } = new(
-        NotGeneratableDiagnosticId, NotGeneratableTitle, NotGeneratableMessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: false);
+        NotGeneratableDiagnosticId, NotGeneratableTitle, NotGeneratableMessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => [ClassRule, MemberRule, NotGeneratableRule];
 
@@ -185,7 +186,7 @@ public class MissingTest : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// ルールが有効か（.editorconfig・globalconfig・プロジェクトの設定で、重大度を none 以外にしているか）を判定する
+    /// ルールが有効か（既定で有効。.editorconfig・globalconfig・プロジェクトの設定で重大度を none にしていれば無効）を判定する
     /// </summary>
     /// <param name="options">コンパイルの設定</param>
     /// <param name="tree">対象の構文木</param>
@@ -201,17 +202,17 @@ public class MissingTest : DiagnosticAnalyzer
             if (provider.TryGetGlobalDiagnosticValue(diagnosticId, cancellationToken, out severity)) return IsOn(severity);
         }
 
-        return options.SpecificDiagnosticOptions.TryGetValue(diagnosticId, out var specific) && IsOn(specific);
+        return !options.SpecificDiagnosticOptions.TryGetValue(diagnosticId, out var specific) || IsOn(specific);
     }
 
     /// <summary>
-    /// 重大度の設定が「報告する」かを判定する（Default は既定の無効のまま）
+    /// 重大度の設定が「報告する」かを判定する（Default は既定の有効のまま）
     /// </summary>
     /// <param name="severity">重大度の設定</param>
     /// <returns>報告するならtrue</returns>
     private static bool IsOn(ReportDiagnostic severity)
     {
-        return severity is not (ReportDiagnostic.Suppress or ReportDiagnostic.Default);
+        return severity != ReportDiagnostic.Suppress;
     }
 
     /// <summary>
