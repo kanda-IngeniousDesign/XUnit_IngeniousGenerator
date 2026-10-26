@@ -12,7 +12,8 @@ namespace XUnit_IngeniousGenerator;
 //                   存在しないフォルダへの書き込みで例外になるうえ、プロダクト側にテストのファイルが入りビルドエラーになる（実機で確認）
 // ・VS Code       : 独自の操作は実行されない（Roslyn の言語サーバーは ApplyChangesOperation 以外を読み飛ばす）ため、
 //                   追加ファイルとして csproj とテストファイルを作らせる（ファイルの作成として反映され、csproj は変更されない）。
-//                   ソリューションへの追加だけは手動で、コマンドをタイトルとテストファイル先頭で案内する
+//                   ソリューションへの追加（dotnet sln add）も実行されないため、Fix の適用でエディターが csproj を書き出すのを
+//                   裏で待ってから追加する（以前はテストファイルの先頭に案内コメントを入れていたが、残り続けるうえ重複したため廃止）
 public sealed class CreateTestProjectCodeAction : CodeAction
 {
     private readonly Document _document;
@@ -33,8 +34,7 @@ public sealed class CreateTestProjectCodeAction : CodeAction
         _onlyMember = onlyMember;
     }
 
-    public override string Title => $"Fix : テストプロジェクト（{TestProjectName}）を作成してテストコードを生成する"
-        + (_useFileEdits ? "（ソリューションへの追加は dotnet sln add で）" : string.Empty);
+    public override string Title => $"Fix : テストプロジェクト（{TestProjectName}）を作成してテストコードを生成する";
 
     // 一括適用（すべて修正）で複数のプロジェクト作成が同時に走らないよう、等価キーを持たせない
     public override string? EquivalenceKey => null;
@@ -43,6 +43,27 @@ public sealed class CreateTestProjectCodeAction : CodeAction
 
     protected override Task<IEnumerable<CodeActionOperation>> ComputeOperationsAsync(CancellationToken cancellationToken)
     {
+        return Task.FromResult(BuildOperations(addToSolution: true));
+    }
+
+    /// <summary>
+    /// 変更のプレビューを作る（Visual Studio の独自の操作はディスクへ書き込むため、プレビューでは何も表示しない。
+    /// VS Code でも、プレビューではソリューションへの追加を始めない）
+    /// </summary>
+    /// <param name="cancellationToken">キャンセル</param>
+    /// <returns>プレビューの操作</returns>
+    protected override Task<IEnumerable<CodeActionOperation>> ComputePreviewOperationsAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(_useFileEdits ? BuildOperations(addToSolution: false) : []);
+    }
+
+    /// <summary>
+    /// テストプロジェクトを作る操作を組み立てる
+    /// </summary>
+    /// <param name="addToSolution">VS Code で、csproj ができたらソリューションへ追加する処理を始めるか</param>
+    /// <returns>操作</returns>
+    private IEnumerable<CodeActionOperation> BuildOperations(bool addToSolution)
+    {
         var (relativePath, code) = TestDocumentWriter.GenerateForNewProject(_document, _targetType, _compilation, TestProjectName, _onlyMember);
         var productProjectPath = _document.Project.FilePath!;
 
@@ -50,20 +71,11 @@ public sealed class CreateTestProjectCodeAction : CodeAction
         // プロダクトのプロジェクトから上へたどって、利用者のソリューションを探す
         var solutionPath = TestProjectScaffolder.FindSolution(productProjectPath);
 
-        IEnumerable<CodeActionOperation> operations = _useFileEdits
-            ? [new ApplyChangesOperation(AddProjectFiles(productProjectPath, solutionPath, relativePath, code))]
-            : [new CreateTestProjectOperation(Title, _testProjectDirectory, productProjectPath, solutionPath, relativePath, code)];
-        return Task.FromResult(operations);
-    }
+        if (!_useFileEdits) return [new CreateTestProjectOperation(Title, _testProjectDirectory, productProjectPath, solutionPath, relativePath, code)];
 
-    /// <summary>
-    /// 変更のプレビューを作る（Visual Studio の独自の操作はディスクへ書き込むため、プレビューでは何も表示しない）
-    /// </summary>
-    /// <param name="cancellationToken">キャンセル</param>
-    /// <returns>プレビューの操作</returns>
-    protected override async Task<IEnumerable<CodeActionOperation>> ComputePreviewOperationsAsync(CancellationToken cancellationToken)
-    {
-        return _useFileEdits ? await ComputeOperationsAsync(cancellationToken).ConfigureAwait(false) : [];
+        // VS Code は操作の実行（dotnet sln add）を読み飛ばすため、エディターが csproj を書き出したら、裏でソリューションに追加する
+        if (addToSolution) _ = TestProjectScaffolder.AddToSolutionWhenCreatedAsync(solutionPath, Path.Combine(_testProjectDirectory, TestProjectName + ".csproj"));
+        return [new ApplyChangesOperation(AddProjectFiles(productProjectPath, relativePath, code))];
     }
 
     /// <summary>
@@ -71,17 +83,12 @@ public sealed class CreateTestProjectCodeAction : CodeAction
     /// VS Code はこれを「ファイルの作成」として反映する（プロダクトの csproj は変更されない）
     /// </summary>
     /// <param name="productProjectPath">プロダクトの csproj のパス</param>
-    /// <param name="solutionPath">利用者のソリューションのパス（見つからなければnull）</param>
     /// <param name="testFileRelativePath">テストプロジェクト内のテストファイルの相対パス</param>
     /// <param name="testCode">テストファイルの内容</param>
     /// <returns>ファイルを加えたソリューション</returns>
-    private Solution AddProjectFiles(string productProjectPath, string? solutionPath, string testFileRelativePath, string testCode)
+    private Solution AddProjectFiles(string productProjectPath, string testFileRelativePath, string testCode)
     {
         var projectFilePath = Path.Combine(_testProjectDirectory, TestProjectName + ".csproj");
-        var addCommand = solutionPath is null
-            ? $"dotnet sln add \"{projectFilePath}\""
-            : $"dotnet sln \"{solutionPath}\" add \"{projectFilePath}\"";
-        var header = $"// ソリューションに追加するには: {addCommand}\r\n";
 
         var project = _document.Project;
         var solution = project.Solution
@@ -93,7 +100,7 @@ public sealed class CreateTestProjectCodeAction : CodeAction
             .AddAdditionalDocument(
                 DocumentId.CreateNewId(project.Id),
                 Path.GetFileName(testFileRelativePath),
-                SourceText.From(header + testCode),
+                SourceText.From(testCode),
                 filePath: Path.Combine(_testProjectDirectory, testFileRelativePath));
         return solution;
     }
