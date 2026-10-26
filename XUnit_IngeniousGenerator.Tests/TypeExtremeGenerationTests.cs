@@ -73,4 +73,22 @@ public class TypeExtremeGenerationTests
         Assert.Contains("public void Label_BoundaryValues_ReturnsExpected(string? name, string expected)", result.Code);
         Assert.Contains("_sut.Label(name!)", result.Code);
     }
+
+    [Fact]
+    public async Task Generate_PadWithMaxValue_SkipsHugeStringInsteadOfAllocating()
+    {
+        const string source = """
+            namespace Sample;
+            public class Formatter
+            {
+                public string Pad(string text, int width) => text.PadLeft(width, '0');
+            }
+            """;
+
+        var result = TargetCompiler.Generate(source, "Sample.Formatter");
+        await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
+
+        Assert.DoesNotContain("int.MaxValue", result.Code);
+        Assert.Contains("[InlineData(\"a\", 1, \"a\")]", result.Code);
+    }
 }
