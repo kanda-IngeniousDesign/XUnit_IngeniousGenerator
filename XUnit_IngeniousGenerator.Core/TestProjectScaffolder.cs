@@ -11,6 +11,10 @@ public static class TestProjectScaffolder
 {
     private const string DefaultTargetFramework = "net8.0";
     private static readonly TimeSpan SolutionAddTimeout = TimeSpan.FromMinutes(1);
+
+    // VS Code で、エディターが csproj を書き出すのを待つ時間の上限と、確認の間隔
+    private static readonly TimeSpan ProjectFileWaitTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan ProjectFilePollInterval = TimeSpan.FromMilliseconds(500);
     private static readonly Regex TargetFrameworkPattern = new(@"<TargetFrameworks?>\s*([^<;\s]+)", RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -39,6 +43,34 @@ public static class TestProjectScaffolder
         if (solutionPath is null) return ScaffoldResult.Succeeded(projectPath, "ソリューションが見つからないため、ソリューションへの追加は手動で行ってください");
         var addError = AddToSolution(solutionPath, projectPath);
         return addError is null ? ScaffoldResult.Succeeded(projectPath, null) : ScaffoldResult.Succeeded(projectPath, addError);
+    }
+
+    /// <summary>
+    /// csproj がディスクに書き出されるのを裏で待ち、できたらソリューションに追加する。
+    /// VS Code の Fix はファイルの追加・変更しか反映されず、コマンドを実行できないため、
+    /// Fix の適用（エディターによる csproj の作成）を待ってから dotnet sln add を実行する。
+    /// 上限の時間内に csproj ができなければ（Fix が取り消されたなど）何もしない
+    /// </summary>
+    /// <param name="solutionPath">追加先のソリューション（見つからなければnull）</param>
+    /// <param name="projectPath">追加するテストプロジェクトの csproj のパス</param>
+    /// <returns>待機と追加の処理（終わりを待つ必要はない）</returns>
+    public static Task AddToSolutionWhenCreatedAsync(string? solutionPath, string projectPath)
+    {
+        if (solutionPath is null) return Task.CompletedTask;
+
+        return Task.Run(async () =>
+        {
+            var deadline = DateTime.UtcNow + ProjectFileWaitTimeout;
+            while (!File.Exists(projectPath))
+            {
+                if (deadline < DateTime.UtcNow) return;
+                await Task.Delay(ProjectFilePollInterval).ConfigureAwait(false);
+            }
+
+            // 書き出しの途中で読まないよう、少し待ってから追加する
+            await Task.Delay(ProjectFilePollInterval).ConfigureAwait(false);
+            AddToSolution(solutionPath, projectPath);
+        });
     }
 
     /// <summary>

@@ -105,7 +105,7 @@ public class GenerateTestFixTests
 
     /// <summary>
     /// VS Code 向け（独自の操作が実行されない環境）では、csproj とテストファイルを
-    /// プロダクトのプロジェクトの追加ファイルとして作らせ（＝ファイルの作成として反映される）、ソリューションへの追加方法をコメントで案内することを確認する
+    /// プロダクトのプロジェクトの追加ファイルとして作らせ（＝ファイルの作成として反映される）、テストファイルに案内のコメントを入れないことを確認する
     /// </summary>
     [Fact]
     public async Task CreateTestProject_AddsProjectFileAndTestFileAsNewFiles()
@@ -120,7 +120,7 @@ public class GenerateTestFixTests
         var action = new CreateTestProjectCodeAction(document, targetType, compilation, testProjectDirectory, useFileEdits: true);
         var newSolution = await ApplyAsync(action);
 
-        Assert.Equal("Fix : テストプロジェクト（Product.Tests）を作成してテストコードを生成する（ソリューションへの追加は dotnet sln add で）", action.Title);
+        Assert.Equal("Fix : テストプロジェクト（Product.Tests）を作成してテストコードを生成する", action.Title);
         var changes = newSolution.GetChanges(workspace.CurrentSolution).GetProjectChanges().Single();
         var added = changes.GetAddedAdditionalDocuments().Select(id => newSolution.GetAdditionalDocument(id)!).OrderBy(d => d.FilePath).ToList();
         Assert.Equal(
@@ -133,7 +133,8 @@ public class GenerateTestFixTests
         Assert.Contains("<ProjectReference Include=", projectFile);
 
         var testCode = (await added[0].GetTextAsync()).ToString();
-        Assert.StartsWith("// ソリューションに追加するには: dotnet sln add \"" + Path.Combine(testProjectDirectory, "Product.Tests.csproj") + "\"", testCode);
+        Assert.StartsWith("using ", testCode);
+        Assert.DoesNotContain("dotnet sln", testCode);
         Assert.Contains("namespace Product.Tests.Domain;", testCode);
     }
 

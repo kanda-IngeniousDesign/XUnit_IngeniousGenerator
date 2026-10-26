@@ -78,6 +78,35 @@ public sealed class TestProjectScaffolderTests : IDisposable
         Assert.Contains("Passed!", output);
     }
 
+    /// <summary>
+    /// VS Code 向けに、csproj が後から書き出されたら、それを待ってソリューションに追加することを確認する
+    /// </summary>
+    [Fact]
+    public async Task AddToSolutionWhenCreated_ProjectFileAppearsLater_AddsItToSolution()
+    {
+        Directory.CreateDirectory(_root);
+        var solution = Path.Combine(_root, "Sample.slnx");
+        await File.WriteAllTextAsync(solution, "<Solution>\n</Solution>\n");
+        var projectPath = Path.Combine(_root, "Product.Tests", "Product.Tests.csproj");
+
+        var adding = TestProjectScaffolder.AddToSolutionWhenCreatedAsync(solution, projectPath);
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        Assert.DoesNotContain("Product.Tests", await File.ReadAllTextAsync(solution));
+
+        // エディターが Fix を適用して csproj を書き出したのと同じ状態にする
+        Directory.CreateDirectory(Path.GetDirectoryName(projectPath)!);
+        await File.WriteAllTextAsync(projectPath, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+        await adding.WaitAsync(TimeSpan.FromMinutes(1));
+
+        Assert.Contains("Product.Tests/Product.Tests.csproj", await File.ReadAllTextAsync(solution));
+    }
+
+    [Fact]
+    public async Task AddToSolutionWhenCreated_NoSolution_DoesNothing()
+    {
+        await TestProjectScaffolder.AddToSolutionWhenCreatedAsync(null, Path.Combine(_root, "X", "X.csproj")).WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
     [Fact]
     public void FindSolution_DirectoryDoesNotExist_ReturnsNull()
     {
