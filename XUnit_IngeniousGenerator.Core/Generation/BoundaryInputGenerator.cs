@@ -332,7 +332,7 @@ internal static class BoundaryInputGenerator
     }
 
     /// <summary>
-    /// 数値の境界値（0 と、比べている定数とその前後）を作る。比較がなければ代表値（0, -1）を使う
+    /// 数値の境界値（0 と、比べている定数とその前後、隣り合う定数の中間）を作る。比較がなければ代表値（0, -1）を使う
     /// </summary>
     /// <param name="constants">本体でその引数と比べている定数</param>
     /// <returns>数値の候補</returns>
@@ -343,7 +343,20 @@ internal static class BoundaryInputGenerator
             .ToList();
         if (numbers.Count == 0) return [TestValue.FromNumber(0), TestValue.FromNumber(-1)];
 
-        return numbers.SelectMany(c => new[] { c - 1, c, c + 1 }).Prepend(0).Distinct().OrderBy(n => n).Select(TestValue.FromNumber);
+        return numbers.SelectMany(c => new[] { c - 1, c, c + 1 }).Concat(GetMiddles(numbers)).Prepend(0).Distinct().OrderBy(n => n).Select(TestValue.FromNumber);
+    }
+
+    /// <summary>
+    /// 隣り合う境界の中間の値（0〜100 なら 50）を作る。区間の端だけでなく、中ほどの値でも確かめるため
+    /// （境界の前後と重なるもの、つまり境界との差が1以下のものは除く）
+    /// </summary>
+    /// <param name="numbers">境界の定数</param>
+    /// <returns>中間の値</returns>
+    private static IEnumerable<decimal> GetMiddles(List<decimal> numbers)
+    {
+        var sorted = numbers.Distinct().OrderBy(n => n).ToList();
+        return sorted.Zip(sorted.Skip(1), (low, high) => decimal.Floor((low + high) / 2))
+            .Where(m => sorted.All(c => 1 < Math.Abs(m - c)));
     }
 
     /// <summary>
