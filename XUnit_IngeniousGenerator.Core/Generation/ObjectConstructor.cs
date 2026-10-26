@@ -107,6 +107,15 @@ internal sealed class ObjectConstructor
                 .Where(c => SymbolEqualityComparer.Default.Equals(c.Parameter, parameter))
                 .Select(c => c.Condition)
                 .ToList();
+
+            // 受け取るだけでどこでも使わない依存は、モックや組み立てをせずに null を渡す（テストを読みやすくするため）
+            var hasNullGuard = parameterConditions.Any(c => c.Kind == GuardConditionKind.Null);
+            if (UnusedDependencyDetector.IsUnused(constructor, parameter, hasNullGuard, _context.Compilation))
+            {
+                arguments.Add((TestValue.Null, parameter.Type));
+                continue;
+            }
+
             var value = ValueSolver.FindValid(parameter.Type, parameterConditions, _context.Options.UseMoq, t => Create(t, depth + 1));
             if (value is null) return null;
             if (!allowNull && value.Kind == TestValueKind.Null && !AcceptsNull(parameter)) return null;

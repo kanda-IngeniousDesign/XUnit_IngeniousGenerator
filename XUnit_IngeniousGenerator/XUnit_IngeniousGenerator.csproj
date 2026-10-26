@@ -10,7 +10,7 @@
     <RootNamespace>XUnit_IngeniousGenerator</RootNamespace>
     <AssemblyName>XUnit_IngeniousGenerator</AssemblyName>
     <PackageId>XUnit_IngeniousGenerator</PackageId>
-    <Version>0.1.0-preview.1</Version>
+    <Version>0.1.0-preview.2</Version>
     <Description>C#のコードから、xUnitのテストコードをRoslynだけで決定的に生成します（LLM不要）。TEST001でテストの不足を警告し、クイックフィックスで生成します。TEST002は自動生成できない関数を理由つきで知らせます。どちらも既定で無効で、.editorconfigで有効にします。</Description>
     <PackageProjectUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</PackageProjectUrl>
     <RepositoryUrl>https://github.com/kanda-IngeniousDesign/XUnit_IngeniousGenerator</RepositoryUrl>

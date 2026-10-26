@@ -91,7 +91,9 @@ public class MissingTestFix : CodeFixProvider
     }
 
     /// <summary>
-    /// 宣言の直前に「// Ignore ルールID」を挿入する Fix を登録する
+    /// 「// Ignore ルールID」を挿入する Fix を登録する。
+    /// ブロック本体を持つメソッド・コンストラクタは、CSharp_IngeniousAnalyzer の関数のルールと同じく本体の1行目に、
+    /// それ以外（クラス・式本体のメソッド・プロパティ）は宣言の直前に挿入する
     /// </summary>
     /// <param name="context">Fix の登録先</param>
     /// <param name="declaration">コメントを挿入する宣言</param>
@@ -102,7 +104,9 @@ public class MissingTestFix : CodeFixProvider
         context.RegisterCodeFix(
             CodeAction.Create(
                 title: title,
-                createChangedDocument: c => context.Document.InsertIgnoreCommentBeforeAsync(declaration, diagnosticId, c),
+                createChangedDocument: c => declaration is BaseMethodDeclarationSyntax { Body: not null } method
+                    ? context.Document.InsertIgnoreCommentInMethodAsync(method, diagnosticId, c)
+                    : context.Document.InsertIgnoreCommentBeforeAsync(declaration, diagnosticId, c),
                 equivalenceKey: "Ignore" + diagnosticId),
             context.Diagnostics.First());
     }

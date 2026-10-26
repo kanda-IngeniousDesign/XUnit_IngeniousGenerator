@@ -137,12 +137,20 @@ public static class TestProjectScaffolder
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
+
+            // 再利用のために残る MSBuild のプロセスが出力をつかんだままにすると、終了を待ち続けて IDE が止まるため、再利用させない
+            startInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
             using var process = Process.Start(startInfo);
             if (process is null) return "dotnet を起動できないため、ソリューションへの追加は手動で行ってください";
 
-            var error = process.StandardError.ReadToEnd();
+            // 出力は非同期で読み、待つ時間を必ず上限で区切る（読み切るまで待つと、上限が効かない）
+            var output = process.StandardOutput.ReadToEndAsync();
+            var error = process.StandardError.ReadToEndAsync();
             if (!process.WaitForExit((int)SolutionAddTimeout.TotalMilliseconds)) return "dotnet sln add が時間内に終わらなかったため、ソリューションへの追加を確認してください";
-            return process.ExitCode == 0 ? null : $"ソリューションへの追加に失敗しました: {error.Trim()}";
+            if (process.ExitCode == 0) return null;
+
+            var message = error.Wait(SolutionAddTimeout) ? error.Result.Trim() : string.Empty;
+            return $"ソリューションへの追加に失敗しました: {message}";
         }
         catch (System.ComponentModel.Win32Exception)
         {

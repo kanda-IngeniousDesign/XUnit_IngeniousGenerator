@@ -27,6 +27,7 @@ public class ReturnValueGenerationTests
 
         Assert.Contains("[InlineData(59, \"C\")]", result.Code);
         Assert.Contains("[InlineData(60, \"B\")]", result.Code);
+        Assert.Contains("[InlineData(70, \"B\")]", result.Code);
         Assert.Contains("[InlineData(79, \"B\")]", result.Code);
         Assert.Contains("[InlineData(80, \"A\")]", result.Code);
         Assert.Contains("public void Judge_BoundaryValues_ReturnsExpected(int score, string expected)", result.Code);
@@ -149,6 +150,7 @@ public class ReturnValueGenerationTests
         var result = await GenerateAndRunAsync(source, "Sample.Meter");
 
         Assert.Contains("[InlineData(0, 0)]", result.Code);
+        Assert.Contains("[InlineData(50, 100)]", result.Code);
         Assert.Contains("[InlineData(99, 198)]", result.Code);
         Assert.Contains("[InlineData(100, 200)]", result.Code);
         Assert.DoesNotContain("[InlineData(101,", result.Code);
