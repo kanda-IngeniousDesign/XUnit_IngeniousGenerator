@@ -70,7 +70,10 @@ public sealed class TestProjectScaffolderTests : IDisposable
         Assert.Contains("Product.Tests", await File.ReadAllTextAsync(solution));
         Assert.True(File.Exists(Path.Combine(testProjectDirectory, "Domain", "CalculatorTests.cs")));
 
-        var (exitCode, output) = await RunAsync("dotnet", $"test \"{solution}\" --nologo");
+        // ソリューション単位の dotnet test は、プロダクトを2か所から同時に復元してまれに衝突するため、先に1回だけ復元する
+        var (restoreCode, restoreOutput) = await RunAsync("dotnet", $"restore \"{solution}\"");
+        Assert.True(restoreCode == 0, restoreOutput);
+        var (exitCode, output) = await RunAsync("dotnet", $"test \"{solution}\" --nologo --no-restore");
         Assert.True(exitCode == 0, output);
         Assert.Contains("Passed!", output);
     }
@@ -99,6 +102,8 @@ public sealed class TestProjectScaffolderTests : IDisposable
         var startInfo = new ProcessStartInfo(fileName, arguments) { RedirectStandardOutput = true, RedirectStandardError = true };
         // 結果（Passed!）を読み取るため、表示言語を英語に固定する
         startInfo.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
+        // 再利用のために残る MSBuild のプロセスが出力をつかんだままになり、終了を待ち続けないようにする
+        startInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
         using var process = Process.Start(startInfo)!;
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();

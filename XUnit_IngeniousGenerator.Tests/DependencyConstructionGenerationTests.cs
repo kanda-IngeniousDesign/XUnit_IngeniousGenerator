@@ -82,4 +82,49 @@ public class DependencyConstructionGenerationTests
 
         Assert.Contains("Link: 引数 node を作れないため null を渡してテスト対象を生成しています（それを使う処理のテストは例外になります）", result.ManualItems);
     }
+
+    [Fact]
+    public async Task Generate_DependencyNotUsedByAnyMethod_PassesNullInsteadOfMock()
+    {
+        const string source = """
+            namespace Sample;
+            public interface ILogger { void Write(string message); }
+            public class Calculator
+            {
+                private readonly ILogger _logger;
+                public Calculator(ILogger logger) { _logger = logger; }
+                public int Twice(int x) => x * 2;
+            }
+            """;
+
+        var result = TargetCompiler.Generate(source, "Sample.Calculator", options: new XUnit_IngeniousGenerator.Core.GenerationOptions(useMoq: true, useVerify: true));
+        var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
+
+        Assert.Contains("new Calculator(null!)", result.Code);
+        Assert.DoesNotContain("Mock", result.Code);
+        Assert.Contains(passed, name => name.StartsWith("Twice_", StringComparison.Ordinal));
+        Assert.Empty(result.ManualItems);
+    }
+
+    [Theory]
+    [InlineData("public int Twice(int x) { _logger.Write(\"x\"); return x * 2; }", "_logger = logger;")]
+    [InlineData("public int Twice(int x) => x * 2;", "System.ArgumentNullException.ThrowIfNull(logger); _logger = logger;")]
+    [InlineData("public int Twice(int x) => x * 2;", "logger.Write(\"created\"); _logger = logger;")]
+    public void Generate_DependencyUsedOrGuarded_KeepsMock(string method, string constructorBody)
+    {
+        var source = $$"""
+            namespace Sample;
+            public interface ILogger { void Write(string message); }
+            public class Calculator
+            {
+                private readonly ILogger _logger;
+                public Calculator(ILogger logger) { {{constructorBody}} }
+                {{method}}
+            }
+            """;
+
+        var result = TargetCompiler.Generate(source, "Sample.Calculator", options: new XUnit_IngeniousGenerator.Core.GenerationOptions(useMoq: true, useVerify: true));
+
+        Assert.Contains("new Calculator(new Mock<ILogger>().Object)", result.Code);
+    }
 }
