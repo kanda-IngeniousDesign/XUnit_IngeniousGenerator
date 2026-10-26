@@ -152,10 +152,18 @@ internal sealed class TestSyntaxBuilder
     {
         var member = test.Member;
         var expectedName = member.Parameters.Any(p => p.Name == "expected") ? "expectedResult" : "expected";
+
+        // null を渡す行がある引数（型の端の値）は、テストの引数を null 許容にし、呼び出しでは null 許容の警告を抑止する
+        var nullable = GetNullColumns(test);
+        var inputTypes = member.Parameters.Select((p, i) => nullable[i] ? p.Type.WithNullableAnnotation(NullableAnnotation.Annotated) : p.Type).ToList();
         var parameters = member.Parameters
-            .Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)))
+            .Select((p, i) => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(inputTypes[i])))
             .Append(Parameter(Identifier(expectedName)).WithType(_renderer.RenderType(member.ReturnType)));
-        var arguments = ArgumentList(SeparatedList(member.Parameters.Select(p => Argument(IdentifierName(EscapeIdentifier(p.Name))))));
+        var arguments = ArgumentList(SeparatedList(member.Parameters.Select((p, i) =>
+        {
+            ExpressionSyntax value = IdentifierName(EscapeIdentifier(p.Name));
+            return Argument(nullable[i] ? PostfixUnaryExpression(SyntaxKind.SuppressNullableWarningExpression, value) : value);
+        })));
         var assertion = ExpressionStatement(InvocationExpression(
             AssertMember(IdentifierName("Equal")),
             ArgumentList(SeparatedList([Argument(IdentifierName(expectedName)), Argument(BuildCall(member, arguments))]))));
@@ -165,7 +173,7 @@ internal sealed class TestSyntaxBuilder
             .AddParameterListParameters([.. parameters])
             .WithBody(Block(assertion));
 
-        var columnTypes = member.Parameters.Select(p => p.Type).Append(member.ReturnType).ToList();
+        var columnTypes = inputTypes.Append(member.ReturnType).ToList();
         var rows = test.Rows.Select(r => r.Inputs.Append(r.Expected).ToList()).ToList();
         return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_BoundaryValues", columnTypes, rows);
     }
@@ -341,6 +349,16 @@ internal sealed class TestSyntaxBuilder
             .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
             .WithExpressionBody(ArrowExpressionClause(creation))
             .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+    }
+
+    /// <summary>
+    /// 戻り値テストの引数のうち、null を渡す行がある参照型の列を判定する
+    /// </summary>
+    /// <param name="test">戻り値テストの内容</param>
+    /// <returns>引数ごとに、null を渡す行があればtrue</returns>
+    private static List<bool> GetNullColumns(ReturnValueTestCase test)
+    {
+        return test.Member.Parameters.Select((p, i) => p.Type.IsReferenceType && test.Rows.Any(r => r.Inputs[i] is null)).ToList();
     }
 
     /// <summary>

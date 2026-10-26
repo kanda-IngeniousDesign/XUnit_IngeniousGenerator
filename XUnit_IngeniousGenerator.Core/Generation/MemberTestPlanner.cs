@@ -57,7 +57,10 @@ internal sealed class MemberTestPlanner
         var tests = new List<PlannedTest>(_exceptionPlanner.Plan(member, guards.Statements, display));
         tests.AddRange(_laterThrowPlanner.Plan(member, declaration, model, guards, display));
         var returnValueTest = _returnValuePlanner.Plan(member, declaration, model, guards, display);
-        if (returnValueTest is not null) tests.Add(returnValueTest);
+
+        // 期待値を静的に計算できた場合だけ、型の端の値（int.MaxValue・null など）での挙動も記録する
+        if (returnValueTest is ReturnValueTestCase computed) tests.AddRange(TypeExtremeTestPlanner.Extend(computed, declaration, model));
+        else if (returnValueTest is not null) tests.Add(returnValueTest);
         return tests;
     }
 

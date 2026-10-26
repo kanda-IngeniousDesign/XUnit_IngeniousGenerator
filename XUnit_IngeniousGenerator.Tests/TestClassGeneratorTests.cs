@@ -83,6 +83,10 @@ public class TestClassGeneratorTests
                 [InlineData(0, 1, 0)]
                 [InlineData(-1, 1, -1)]
                 [InlineData(1, -1, -1)]
+                [InlineData(int.MinValue, 1, int.MinValue)]
+                [InlineData(int.MaxValue, 1, int.MaxValue)]
+                [InlineData(1, int.MinValue, 0)]
+                [InlineData(1, int.MaxValue, 0)]
                 public void Divide_BoundaryValues_ReturnsExpected(int dividend, int divisor, int expected)
                 {
                     Assert.Equal(expected, _sut.Divide(dividend, divisor));
@@ -96,8 +100,9 @@ public class TestClassGeneratorTests
 
                 [Theory]
                 [InlineData(1, -1)]
-                [InlineData(-2147483647, 2147483647)]
+                [InlineData(-2147483647, int.MaxValue)]
                 [InlineData(0, 0)]
+                [InlineData(int.MaxValue, -2147483647)]
                 public void Negate_BoundaryValues_ReturnsExpected(int value, int expected)
                 {
                     Assert.Equal(expected, Calculator.Negate(value));
