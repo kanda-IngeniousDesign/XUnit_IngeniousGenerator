@@ -15,7 +15,7 @@ dotnet_diagnostic.TEST002.severity = none
 Generated tests:
 
 - Exception tests from argument guards (`if (...) throw`, `ThrowIf...`, `?? throw`), including `ParamName` checks.
-- Boundary-value tests whose expected values are computed from the code by a static interpreter.
+- Boundary-value tests whose expected values are computed from the code by a static interpreter, including the midpoint between boundaries and each type's extremes (`int.MinValue`, `int.MaxValue`, `null`, ...). Runtime exceptions at the extremes (for example `NullReferenceException`) are recorded as exception tests.
 - Snapshot tests (Verify) for values that can't be computed statically, with dependencies mocked by Moq (when the test project references Verify.Xunit and Moq).
 - No-exception checks for methods without a return value.
 

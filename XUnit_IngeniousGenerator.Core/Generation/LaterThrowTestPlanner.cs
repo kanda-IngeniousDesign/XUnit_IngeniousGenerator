@@ -104,7 +104,7 @@ internal sealed class LaterThrowTestPlanner
     /// <param name="baseRow">基準の入力</param>
     /// <param name="row">例外になった入力</param>
     /// <returns>テスト名の条件部分</returns>
-    private static string DescribeChangedInput(IMethodSymbol member, object?[] baseRow, object?[] row)
+    internal static string DescribeChangedInput(IMethodSymbol member, object?[] baseRow, object?[] row)
     {
         for (var i = 0; i < row.Length; i++)
         {
@@ -127,6 +127,7 @@ internal sealed class LaterThrowTestPlanner
     {
         return value switch
         {
+            _ when TypeExtremes.Describe(value) is { } extreme => extreme,
             null => "IsNull",
             string { Length: 0 } => "IsEmpty",
             string text when string.IsNullOrWhiteSpace(text) => "IsWhiteSpace",

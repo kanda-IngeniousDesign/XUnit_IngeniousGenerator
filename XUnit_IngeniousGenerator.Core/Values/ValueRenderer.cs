@@ -83,6 +83,9 @@ public sealed class ValueRenderer
     /// <returns>式の構文</returns>
     public static ExpressionSyntax RenderClrValue(object? value)
     {
+        // 型の端の値は、桁の多いリテラルではなく int.MaxValue のように書く
+        if (TypeExtremes.TryRender(value) is { } extreme) return extreme;
+
         return value switch
         {
             null => LiteralExpression(SyntaxKind.NullLiteralExpression),

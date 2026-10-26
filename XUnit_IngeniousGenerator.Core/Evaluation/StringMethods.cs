@@ -9,6 +9,9 @@ namespace XUnit_IngeniousGenerator.Core.Evaluation;
 /// </summary>
 internal static class StringMethods
 {
+    // 評価で作る文字列の長さの上限。IDE の解析の中で動くため、int.MaxValue などで巨大な文字列を作らないようにする
+    private const int MaxResultLength = 10_000;
+
     /// <summary>
     /// string のインスタンスメソッドを評価する
     /// </summary>
@@ -39,10 +42,10 @@ internal static class StringMethods
                 ("Replace", "string,string?") or ("Replace", "string,string") =>
                     text.Replace((string)evaluate(arguments[0].Expression)!, (string?)evaluate(arguments[1].Expression)),
                 ("Replace", "char,char") => text.Replace((char)evaluate(arguments[0].Expression)!, (char)evaluate(arguments[1].Expression)!),
-                ("PadLeft", "int") => text.PadLeft((int)evaluate(arguments[0].Expression)!),
-                ("PadLeft", "int,char") => text.PadLeft((int)evaluate(arguments[0].Expression)!, (char)evaluate(arguments[1].Expression)!),
-                ("PadRight", "int") => text.PadRight((int)evaluate(arguments[0].Expression)!),
-                ("PadRight", "int,char") => text.PadRight((int)evaluate(arguments[0].Expression)!, (char)evaluate(arguments[1].Expression)!),
+                ("PadLeft", "int") => text.PadLeft(CheckWidth((int)evaluate(arguments[0].Expression)!)),
+                ("PadLeft", "int,char") => text.PadLeft(CheckWidth((int)evaluate(arguments[0].Expression)!), (char)evaluate(arguments[1].Expression)!),
+                ("PadRight", "int") => text.PadRight(CheckWidth((int)evaluate(arguments[0].Expression)!)),
+                ("PadRight", "int,char") => text.PadRight(CheckWidth((int)evaluate(arguments[0].Expression)!), (char)evaluate(arguments[1].Expression)!),
                 ("StartsWith", "char") => 0 < text.Length && text[0] == (char)evaluate(arguments[0].Expression)!,
                 ("EndsWith", "char") => 0 < text.Length && text[text.Length - 1] == (char)evaluate(arguments[0].Expression)!,
                 ("StartsWith", "string,System.StringComparison") =>
@@ -58,6 +61,16 @@ internal static class StringMethods
             // Substring の範囲外などは、実行時にも例外になる
             throw new GuestThrowException(null, ex.GetType().FullName, ex.ParamName, invocation);
         }
+    }
+
+    /// <summary>
+    /// 詰め物（PadLeft / PadRight）の幅が上限以内かを確かめる（超える場合は評価しない）
+    /// </summary>
+    /// <param name="width">幅</param>
+    /// <returns>幅</returns>
+    private static int CheckWidth(int width)
+    {
+        return width <= MaxResultLength ? width : throw new UnsupportedSyntaxException($"長すぎる文字列（幅 {width}）");
     }
 
     /// <summary>
