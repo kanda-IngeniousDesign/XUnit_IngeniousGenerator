@@ -59,6 +59,9 @@ internal static class DotnetTestRunner
         // CI 上でこのテスト自体を動かすときは、中で起動する dotnet test から CI の環境変数を外す
         foreach (var name in BuildServerVariables) startInfo.Environment.Remove(name);
 
+        // 結果の行（Passed ...）を読み取るため、表示言語を英語に固定する（OS や IDE の言語設定によっては日本語で出力される）
+        startInfo.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
+
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("dotnet test を起動できません。");
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();

@@ -97,6 +97,8 @@ public sealed class TestProjectScaffolderTests : IDisposable
     private static async Task<(int ExitCode, string Output)> RunAsync(string fileName, string arguments)
     {
         var startInfo = new ProcessStartInfo(fileName, arguments) { RedirectStandardOutput = true, RedirectStandardError = true };
+        // 結果（Passed!）を読み取るため、表示言語を英語に固定する
+        startInfo.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
         using var process = Process.Start(startInfo)!;
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();

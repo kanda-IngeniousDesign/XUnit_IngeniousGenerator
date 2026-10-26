@@ -84,7 +84,8 @@ public class GenerateTestFixTests
 
     /// <summary>
     /// テストプロジェクトがなければ、「テストプロジェクトを作成して生成」と Ignore が出ることを確認する。
-    /// 作成も、どの IDE でも反映されるソリューションの変更（ApplyChangesOperation）だけで行う
+    /// Visual Studio（言語サーバー以外）では、作成はソリューションの変更ではなく、ディスクに書き出す独自の操作になる
+    /// （追加ファイルにすると、VS はプロダクトの csproj に項目を書き足してしまうため）
     /// </summary>
     [Fact]
     public async Task Fix_NoTestProject_OffersCreateTestProjectAndIgnore()
@@ -95,13 +96,15 @@ public class GenerateTestFixTests
         var actions = await ComputeFixesAsync(workspace);
 
         Assert.Equal(
-            ["Fix : テストプロジェクト（Product.Tests）を作成してテストコードを生成する（ソリューションへの追加は dotnet sln add で）", "Ignore : テストコードの存在チェックを無視する"],
+            ["Fix : テストプロジェクト（Product.Tests）を作成してテストコードを生成する", "Ignore : テストコードの存在チェックを無視する"],
             actions.Select(a => a.Title));
-        await ApplyAsync(actions[0]);
+        var operation = Assert.Single(await actions[0].GetOperationsAsync(CancellationToken.None));
+        Assert.IsNotType<ApplyChangesOperation>(operation);
+        Assert.Empty(await actions[0].GetPreviewOperationsAsync(CancellationToken.None));
     }
 
     /// <summary>
-    /// csproj とテストファイルを
+    /// VS Code 向け（独自の操作が実行されない環境）では、csproj とテストファイルを
     /// プロダクトのプロジェクトの追加ファイルとして作らせ（＝ファイルの作成として反映される）、ソリューションへの追加方法をコメントで案内することを確認する
     /// </summary>
     [Fact]
@@ -114,7 +117,7 @@ public class GenerateTestFixTests
         var targetType = compilation.GetTypeByMetadataName("Product.Domain.Calculator")!;
         var testProjectDirectory = Path.Combine("/src", "Product.Tests");
 
-        var action = new CreateTestProjectCodeAction(document, targetType, compilation, testProjectDirectory);
+        var action = new CreateTestProjectCodeAction(document, targetType, compilation, testProjectDirectory, useFileEdits: true);
         var newSolution = await ApplyAsync(action);
 
         Assert.Equal("Fix : テストプロジェクト（Product.Tests）を作成してテストコードを生成する（ソリューションへの追加は dotnet sln add で）", action.Title);
