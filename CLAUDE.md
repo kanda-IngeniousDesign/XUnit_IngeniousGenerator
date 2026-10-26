@@ -94,6 +94,7 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 16. パッケージの分離：TEST001・TEST002 を CSharp_IngeniousAnalyzer から `XUnit_IngeniousGenerator` パッケージ（生成エンジンを同梱）に移した。共通部品は `Roslyn_IngeniousCommon`（ソースのパッケージ）にまとめ、CSharp_IngeniousAnalyzer もこれを使う。テストプロジェクトの作成は、IDE によらず追加ファイルとして作る1通りにした。
 17. Windows 版 VS で確認した結果の反映（0.1.0-preview.2）：テストプロジェクトの作成を IDE で分けた（VS は独自の操作でフォルダとファイルを書き出して dotnet sln add、VS Code は追加ファイル）。境界値に、隣り合う境界の中間の値（0〜100 なら 50）を加えた。コンストラクタで受け取るだけでどこでも使わない依存は、モックではなく null を渡す。
 18. ソリューションへの自動追加（0.1.0-preview.3）：VS Code でも、Fix の適用でエディターが csproj を書き出すのを裏で待ち、dotnet sln add を実行する。テストファイル先頭の案内コメントは廃止。
+19. 型の端の値（0.1.0-preview.3）：戻り値を静的に計算できるメソッドでは、引数を1つずつ型の端の値（int / long / double / decimal の MinValue・MaxValue、string の null）に変えた入力も評価する。戻り値は Theory の行に、実行時の例外（NullReferenceException・OverflowException など）は例外テストにする（期待値は今のコードの挙動）。引数のチェックによる例外は対象外（ガードの例外テストがあるため）。オーバーフロー検査ありのプロジェクトでは整数の端の値は使わない。
 
 これから:
 
