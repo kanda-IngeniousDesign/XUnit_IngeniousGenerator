@@ -179,6 +179,22 @@ public class GenerateTestFixTests
     }
 
     /// <summary>
+    /// ブロック本体を持つ関数では、CSharp_IngeniousAnalyzer の関数のルールと同じく、「// Ignore TEST002」を本体の1行目に挿入することを確認する
+    /// </summary>
+    [Fact]
+    public async Task Fix_NotGeneratableOnBlockBody_InsertsIgnoreAtFirstLineOfBody()
+    {
+        using var workspace = new AdhocWorkspace();
+        var product = AddProductProject(workspace);
+        AddProject(workspace, "Product.Tests", [CorLib, XUnitCore], product.Id);
+
+        var actions = await ComputeFixesAsync(workspace, "Divide", MissingTest.NotGeneratableRule);
+
+        var document = (await ApplyAsync(Assert.Single(actions))).Projects.Single(p => p.Name == "Product").Documents.Single();
+        Assert.Contains("    public int Divide(int dividend, int divisor)\n    {\n        // Ignore TEST002\n        if (divisor == 0)", (await document.GetTextAsync()).ToString());
+    }
+
+    /// <summary>
     /// コンストラクタ名・プロパティ名の TEST001 でも、そのメンバーのテストだけを既存のテストファイルに追加することを確認する
     /// （コンストラクタ名はクラス名と同じため、2つ目の出現を警告の位置にする）
     /// </summary>

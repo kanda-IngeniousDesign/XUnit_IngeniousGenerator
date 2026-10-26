@@ -71,7 +71,7 @@ public sealed class TestProjectScaffolderTests : IDisposable
         Assert.True(File.Exists(Path.Combine(testProjectDirectory, "Domain", "CalculatorTests.cs")));
 
         // ソリューション単位の dotnet test は、プロダクトを2か所から同時に復元してまれに衝突するため、先に1回だけ復元する
-        var (restoreCode, restoreOutput) = await RunAsync("dotnet", $"restore \"{solution}\"");
+        var (restoreCode, restoreOutput) = await RunAsync("dotnet", $"restore \"{solution}\" --disable-parallel");
         Assert.True(restoreCode == 0, restoreOutput);
         var (exitCode, output) = await RunAsync("dotnet", $"test \"{solution}\" --nologo --no-restore");
         Assert.True(exitCode == 0, output);
