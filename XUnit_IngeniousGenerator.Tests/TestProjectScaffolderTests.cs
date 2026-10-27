@@ -70,7 +70,11 @@ public sealed class TestProjectScaffolderTests : IDisposable
         var testCode = TestClassGenerator.Generate(targetType, compilation, "Product.Tests.Domain", new GenerationOptions(useMoq: true, useVerify: true)).Code;
 
         Assert.Equal(solution, TestProjectScaffolder.FindSolution(productProject));
+        var productProjectBefore = await File.ReadAllTextAsync(productProject);
         var result = TestProjectScaffolder.Create(testProjectDirectory, productProject, solution, Path.Combine("Domain", "CalculatorTests.cs"), testCode);
+
+        // アプリ側（プロダクト）の csproj には何も書き足さない（preview.1 の VS では参照が追加されてビルドエラーになった）
+        Assert.Equal(productProjectBefore, await File.ReadAllTextAsync(productProject));
 
         Assert.True(result.Success, result.Message);
         Assert.Null(result.Message);
