@@ -29,7 +29,7 @@ public sealed class TestProjectScaffolderTests : IDisposable
 
             class Calculator
             {
-                public int Bonus(int amount, Rank rank) => rank == Rank.High ? amount * 2 : amount;
+                public void Apply(int amount, Rank rank) { }
 
                 public int Divide(int dividend, int divisor)
                 {
