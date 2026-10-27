@@ -16,14 +16,21 @@ public sealed class TestProjectScaffolderTests : IDisposable
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 
+    /// <summary>
+    /// 修飾子のないクラス（internal）と internal の列挙型も、パッケージの targets（InternalsVisibleTo）を読み込んだプロダクトでテストできる
+    /// </summary>
     [Fact]
     public async Task Create_NewTestProject_AddsToSolutionAndGeneratedTestsPass()
     {
         const string calculator = """
             namespace Product.Domain;
 
-            public class Calculator
+            internal enum Rank { Low, High }
+
+            class Calculator
             {
+                public int Bonus(int amount, Rank rank) => rank == Rank.High ? amount * 2 : amount;
+
                 public int Divide(int dividend, int divisor)
                 {
                     if (divisor == 0) throw new ArgumentOutOfRangeException(nameof(divisor));
@@ -36,13 +43,16 @@ public sealed class TestProjectScaffolderTests : IDisposable
         var productDirectory = Path.Combine(_root, "Product");
         Directory.CreateDirectory(Path.Combine(productDirectory, "Domain"));
         var productProject = Path.Combine(productDirectory, "Product.csproj");
-        await File.WriteAllTextAsync(productProject, """
+        // パッケージを入れたときと同じく、targets を読み込む（InternalsVisibleTo がテストプロジェクトに internal を公開する）
+        var targets = Path.Combine(AppContext.BaseDirectory, "XUnit_IngeniousGenerator.targets");
+        await File.WriteAllTextAsync(productProject, $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <TargetFramework>net10.0</TargetFramework>
                 <Nullable>enable</Nullable>
                 <ImplicitUsings>enable</ImplicitUsings>
               </PropertyGroup>
+              <Import Project="{targets}" />
             </Project>
             """);
         await File.WriteAllTextAsync(Path.Combine(productDirectory, "Domain", "Calculator.cs"), calculator);

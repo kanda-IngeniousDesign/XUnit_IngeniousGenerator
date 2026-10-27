@@ -96,6 +96,7 @@ LLMに依頼する現在の運用と同じく、テストごとに人間が入�
 18. ソリューションへの自動追加（0.1.0-preview.3）：VS Code でも、Fix の適用でエディターが csproj を書き出すのを裏で待ち、dotnet sln add を実行する。テストファイル先頭の案内コメントは廃止。
 19. 型の端の値（0.1.0-preview.3）：戻り値を静的に計算できるメソッドでは、引数を1つずつ型の端の値（int / long / double / decimal の MinValue・MaxValue、string の null）に変えた入力も評価する。戻り値は Theory の行に、実行時の例外（NullReferenceException・OverflowException など）は例外テストにする（期待値は今のコードの挙動）。引数のチェックによる例外は対象外（ガードの例外テストがあるため）。オーバーフロー検査ありのプロジェクトでは整数の端の値は使わない。
 20. 同じクラスの関数の呼び出し：public の関数から呼んでいる同じクラスの関数（private など）の中身もたどり、戻り値の計算・境界値の定数（引数をそのまま渡している場合）・ガードより後ろの throw・外部依存の検出に含める。private の関数を直接テストはしない。ジェネリック・virtual・async・ref / out / params の関数、別のインスタンスの関数、再帰、深さ8を超える呼び出しはたどらない。
+21. internal のクラス：修飾子のないクラスは internal でテストプロジェクトから見えないため、パッケージの targets で `<InternalsVisibleTo Include="(テストプロジェクトのフォルダ名)" />` を設定する（利用者のプロジェクトにファイルを追加・csproj を編集すると、驚かせるうえコミットの扱いが必要になるため。当初は Fix で InternalsVisibleTo.cs を追加する案だったが 2026-10-27 に変更）。xUnit のテストメソッドは public のため、public でない型（internal の列挙型など）の引数・TheoryData の列は object で受け取り、呼び出しでキャストする（そのままでは CS0051）。
 
 これから:
 

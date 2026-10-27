@@ -11,6 +11,7 @@ dotnet_diagnostic.TEST002.severity = none
 
 - **TEST001** is reported only when the Quick Fix can actually generate tests. If the test project has no test file (`XxxTests.cs`) for the class, it is reported on the class name and the Quick Fix generates the test file (creating the test project if needed and adding it to the solution). If the test file exists, it is reported on each public method, constructor or property setter that has no test (no test method named `MemberName_...`), and the Quick Fix adds the tests for that member only. Existing test methods are never changed.
 - **TEST002** is reported on members without tests whose tests cannot be generated automatically (for example, members that use files, databases or the network), with the reason. Verify such members another way, then suppress the warning with the Quick Fix, which inserts `// Ignore TEST002` before the member.
+- Classes without an access modifier are `internal`. The package exposes internals to the test project (`InternalsVisibleTo`) at build time, so generated tests for internal classes build without adding files or editing the project file. If you remove the package but keep the tests, add `<InternalsVisibleTo Include="Xxx.Tests" />` to the project file.
 
 Generated tests:
 
@@ -31,6 +32,7 @@ C#のコードから、xUnitのテストコードをRoslynだけで決定的に�
 
 - **TEST001** は、クイックフィックスで実際にテストを生成できる場合だけ報告します。テストファイル（`XxxTests.cs`）がなければクラス名に報告し、クイックフィックスでテストファイルを生成します（テストプロジェクトがなければ作成し、ソリューションにも追加します）。テストファイルがあれば、テストのない（「メンバー名_」で始まるテストメソッドがない）publicなメソッド・コンストラクタ・プロパティのsetterに報告し、クイックフィックスでそのメンバーのテストだけを追加します。既存のテストメソッドは変更しません。
 - **TEST002** は、テストがなく、自動では生成できないメンバー（ファイル・DB・通信を使うものなど）に、理由とともに報告します。別の方法で確認したうえで、クイックフィックスで `// Ignore TEST002` を挿入して警告を消します。
+- アクセス修飾子のないクラスは internal で、本来はテストプロジェクトから見えません。このパッケージがビルド時にテストプロジェクトへ internal を公開する（`InternalsVisibleTo`）ため、ファイルの追加や csproj の編集なしで、internal のクラスのテストもビルドできます。パッケージを外してテストだけ残す場合は、csproj に `<InternalsVisibleTo Include="Xxx.Tests" />` を書いてください。
 
 テストプロジェクトは、既定では隣のフォルダの「プロジェクト名.Tests」を探します。別の場所にある場合は、csprojで `IngeniousTestProjectDirectory` プロパティを指定してください。プロダクトコードは書き換えません。
 
