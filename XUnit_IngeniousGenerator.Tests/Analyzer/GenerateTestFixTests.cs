@@ -220,6 +220,68 @@ public class GenerateTestFixTests
         Assert.DoesNotContain(unexpectedPrefix, merged);
     }
 
+    /// <summary>
+    /// internal のクラスでは、テストの生成と一緒に、プロダクトに InternalsVisibleTo を書いたファイルを追加することを確認する
+    /// </summary>
+    [Fact]
+    public async Task Fix_InternalClass_AddsInternalsVisibleToFile()
+    {
+        using var workspace = new AdhocWorkspace();
+        var product = AddProductProject(workspace, CalculatorSource.Replace("public class Calculator", "class Calculator"));
+        AddProject(workspace, "Product.Tests", [CorLib, XUnitCore], product.Id);
+
+        var actions = await ComputeFixesAsync(workspace);
+        var newSolution = await ApplyAsync(actions[0]);
+
+        var added = newSolution.GetChanges(workspace.CurrentSolution).GetProjectChanges()
+            .Single(c => c.ProjectId == product.Id).GetAddedDocuments().Select(id => newSolution.GetDocument(id)!).Single();
+        Assert.Equal(Path.Combine("/src", "Product", "InternalsVisibleTo.cs"), added.FilePath);
+        Assert.Contains("[assembly: InternalsVisibleTo(\"Product.Tests\")]", (await added.GetTextAsync()).ToString());
+    }
+
+    /// <summary>
+    /// public のクラスと、InternalsVisibleTo が既にある internal のクラスでは、プロダクトに何も追加しないことを確認する
+    /// </summary>
+    [Theory]
+    [InlineData("public class Calculator", false)]
+    [InlineData("class Calculator", true)]
+    public async Task Fix_PublicOrAlreadyGranted_DoesNotChangeProduct(string declaration, bool granted)
+    {
+        using var workspace = new AdhocWorkspace();
+        // csproj の <InternalsVisibleTo> も、ビルド時にこの属性として生成される
+        var grant = granted ? "[assembly: System.Runtime.CompilerServices.InternalsVisibleTo(\"Product.Tests, PublicKey=00\")]\n" : string.Empty;
+        var product = AddProductProject(workspace, grant + CalculatorSource.Replace("public class Calculator", declaration));
+        AddProject(workspace, "Product.Tests", [CorLib, XUnitCore], product.Id);
+
+        var actions = await ComputeFixesAsync(workspace);
+        var newSolution = await ApplyAsync(actions[0]);
+
+        Assert.DoesNotContain(newSolution.GetChanges(workspace.CurrentSolution).GetProjectChanges(), c => c.ProjectId == product.Id);
+    }
+
+    /// <summary>
+    /// テストプロジェクトを作成するときも、internal のクラスなら InternalsVisibleTo を追加することを確認する
+    /// （Visual Studio は独自の操作の前にソリューションの変更として、VS Code は追加ファイルと一緒に）
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateTestProject_InternalClass_AddsInternalsVisibleToFile(bool useFileEdits)
+    {
+        using var workspace = new AdhocWorkspace();
+        var product = AddProductProject(workspace, CalculatorSource.Replace("public class Calculator", "class Calculator"));
+        var document = GetCalculatorDocument(workspace);
+        var compilation = (await document.Project.GetCompilationAsync())!;
+        var targetType = compilation.GetTypeByMetadataName("Product.Domain.Calculator")!;
+
+        var action = new CreateTestProjectCodeAction(document, targetType, compilation, Path.Combine("/src", "Product.Tests"), useFileEdits);
+        var operations = await action.GetPreviewOperationsAsync(CancellationToken.None);
+
+        var newSolution = Assert.IsType<ApplyChangesOperation>(Assert.Single(operations)).ChangedSolution;
+        var added = newSolution.GetChanges(workspace.CurrentSolution).GetProjectChanges().Single(c => c.ProjectId == product.Id).GetAddedDocuments();
+        Assert.Equal("InternalsVisibleTo.cs", newSolution.GetDocument(Assert.Single(added))!.Name);
+    }
+
     private static Task<List<CodeAction>> ComputeFixesAsync(AdhocWorkspace workspace)
     {
         return ComputeFixesAsync(workspace, "Calculator", new MissingTest().SupportedDiagnostics[0]);

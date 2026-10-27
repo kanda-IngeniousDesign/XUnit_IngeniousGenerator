@@ -157,16 +157,16 @@ internal sealed class TestSyntaxBuilder
         var nullable = GetNullColumns(test);
         var inputTypes = member.Parameters.Select((p, i) => nullable[i] ? p.Type.WithNullableAnnotation(NullableAnnotation.Annotated) : p.Type).ToList();
         var parameters = member.Parameters
-            .Select((p, i) => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(inputTypes[i])))
-            .Append(Parameter(Identifier(expectedName)).WithType(_renderer.RenderType(member.ReturnType)));
+            .Select((p, i) => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(RenderSignatureType(inputTypes[i])))
+            .Append(Parameter(Identifier(expectedName)).WithType(RenderSignatureType(member.ReturnType)));
         var arguments = ArgumentList(SeparatedList(member.Parameters.Select((p, i) =>
         {
-            ExpressionSyntax value = IdentifierName(EscapeIdentifier(p.Name));
+            var value = ReadSignatureValue(EscapeIdentifier(p.Name), p.Type);
             return Argument(nullable[i] ? PostfixUnaryExpression(SyntaxKind.SuppressNullableWarningExpression, value) : value);
         })));
         var assertion = ExpressionStatement(InvocationExpression(
             AssertMember(IdentifierName("Equal")),
-            ArgumentList(SeparatedList([Argument(IdentifierName(expectedName)), Argument(BuildCall(member, arguments))]))));
+            ArgumentList(SeparatedList([Argument(ReadSignatureValue(expectedName, member.ReturnType)), Argument(BuildCall(member, arguments))]))));
 
         var method = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), test.TestName)
             .AddModifiers(Token(SyntaxKind.PublicKeyword))
@@ -281,7 +281,7 @@ internal sealed class TestSyntaxBuilder
     /// <returns>テストメソッドの引数</returns>
     private IEnumerable<ParameterSyntax> BuildInputParameters(BoundaryInputs inputs)
     {
-        return inputs.DataParameters.Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)));
+        return inputs.DataParameters.Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(RenderSignatureType(p.Type)));
     }
 
     /// <summary>
@@ -295,7 +295,46 @@ internal sealed class TestSyntaxBuilder
         var withCast = MemberDisplay.HasSameArityOverload(member);
         return ArgumentList(SeparatedList(member.Parameters.Select(p => Argument(inputs.FixedValues.TryGetValue(p, out var fixedValue)
             ? _renderer.Render(fixedValue, p.Type, withCast)
-            : IdentifierName(EscapeIdentifier(p.Name))))));
+            : ReadSignatureValue(EscapeIdentifier(p.Name), p.Type)))));
+    }
+
+    /// <summary>
+    /// テストメソッドの引数・テストデータの列の型を作る。xUnit のテストは public のため、
+    /// public でない型（internal の列挙型など）は object で受け取る（そのままでは CS0051 になる）
+    /// </summary>
+    /// <param name="type">型</param>
+    /// <returns>型の構文</returns>
+    private TypeSyntax RenderSignatureType(ITypeSymbol type)
+    {
+        return IsPublic(type) ? _renderer.RenderType(type) : PredefinedType(Token(SyntaxKind.ObjectKeyword));
+    }
+
+    /// <summary>
+    /// テストメソッドの引数を読む式を作る（object で受け取った引数は、元の型にキャストする）
+    /// </summary>
+    /// <param name="name">引数名</param>
+    /// <param name="type">元の型</param>
+    /// <returns>引数を読む式</returns>
+    private ExpressionSyntax ReadSignatureValue(string name, ITypeSymbol type)
+    {
+        return IsPublic(type) ? IdentifierName(name) : CastExpression(_renderer.RenderType(type), IdentifierName(name));
+    }
+
+    /// <summary>
+    /// 型が、テストのプロジェクトの public なメンバーの型として使えるか（型・外側の型・型引数・配列の要素がすべて public か）を判定する
+    /// </summary>
+    /// <param name="type">型</param>
+    /// <returns>使えればtrue</returns>
+    private static bool IsPublic(ITypeSymbol type)
+    {
+        return type switch
+        {
+            IArrayTypeSymbol array => IsPublic(array.ElementType),
+            INamedTypeSymbol named => named.DeclaredAccessibility == Accessibility.Public
+                && (named.ContainingType is null || IsPublic(named.ContainingType))
+                && named.TypeArguments.All(IsPublic),
+            _ => true,
+        };
     }
 
     /// <summary>
@@ -334,7 +373,7 @@ internal sealed class TestSyntaxBuilder
     /// <returns>プロパティの宣言</returns>
     private PropertyDeclarationSyntax BuildTheoryData(string dataName, IReadOnlyList<ITypeSymbol> columnTypes, IReadOnlyList<IReadOnlyList<object?>> rows)
     {
-        var theoryDataType = GenericName("TheoryData").WithTypeArgumentList(TypeArgumentList(SeparatedList(columnTypes.Select(_renderer.RenderType))));
+        var theoryDataType = GenericName("TheoryData").WithTypeArgumentList(TypeArgumentList(SeparatedList(columnTypes.Select(RenderSignatureType))));
         var elements = rows.Select(r =>
         {
             var values = r.Select(_renderer.RenderData).ToList();

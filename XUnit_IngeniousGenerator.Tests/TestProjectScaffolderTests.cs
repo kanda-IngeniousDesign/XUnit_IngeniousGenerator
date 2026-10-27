@@ -16,14 +16,21 @@ public sealed class TestProjectScaffolderTests : IDisposable
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 
+    /// <summary>
+    /// 修飾子のないクラス（internal）と internal の列挙型を、Fix と同じく InternalsVisibleTo を追加した前提でテストする
+    /// </summary>
     [Fact]
     public async Task Create_NewTestProject_AddsToSolutionAndGeneratedTestsPass()
     {
         const string calculator = """
             namespace Product.Domain;
 
-            public class Calculator
+            internal enum Rank { Low, High }
+
+            class Calculator
             {
+                public int Bonus(int amount, Rank rank) => rank == Rank.High ? amount * 2 : amount;
+
                 public int Divide(int dividend, int divisor)
                 {
                     if (divisor == 0) throw new ArgumentOutOfRangeException(nameof(divisor));
@@ -46,6 +53,7 @@ public sealed class TestProjectScaffolderTests : IDisposable
             </Project>
             """);
         await File.WriteAllTextAsync(Path.Combine(productDirectory, "Domain", "Calculator.cs"), calculator);
+        await File.WriteAllTextAsync(Path.Combine(productDirectory, "InternalsVisibleTo.cs"), InternalsVisibleToWriter.BuildCode("Product.Tests"));
         var solution = Path.Combine(_root, "Sample.slnx");
         await File.WriteAllTextAsync(solution, """
             <Solution>
