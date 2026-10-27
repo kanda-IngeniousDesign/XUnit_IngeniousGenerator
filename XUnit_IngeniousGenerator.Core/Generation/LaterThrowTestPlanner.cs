@@ -35,7 +35,7 @@ internal sealed class LaterThrowTestPlanner
     /// <returns>例外テストの一覧</returns>
     public List<PlannedTest> Plan(IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, string display)
     {
-        var sites = CollectLaterThrowSites(declaration, guards);
+        var sites = CollectLaterThrowSites(declaration, model, guards);
         if (sites.Count == 0) return [];
 
         var tests = new List<PlannedTest>();
@@ -57,16 +57,19 @@ internal sealed class LaterThrowTestPlanner
     }
 
     /// <summary>
-    /// ガード文より後ろにある throw 文・throw 式を集める
+    /// ガード文より後ろにある throw 文・throw 式と、そこから呼んでいる同じクラスの関数の中の throw を集める
     /// </summary>
     /// <param name="declaration">メソッドの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
     /// <param name="guards">先頭のガード</param>
     /// <returns>throw の構文</returns>
-    private static HashSet<SyntaxNode> CollectLaterThrowSites(BaseMethodDeclarationSyntax declaration, MemberGuards guards)
+    private static HashSet<SyntaxNode> CollectLaterThrowSites(BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards)
     {
         var statements = declaration.Body?.Statements.Skip(guards.Statements.Count) ?? [];
+        var callees = SameClassCall.FindReachable(declaration, model).SelectMany(c => c.Declaration.DescendantNodes());
         return new HashSet<SyntaxNode>(statements
             .SelectMany(s => s.DescendantNodesAndSelf())
+            .Concat(callees)
             .Where(n => n is ThrowStatementSyntax or ThrowExpressionSyntax));
     }
 
