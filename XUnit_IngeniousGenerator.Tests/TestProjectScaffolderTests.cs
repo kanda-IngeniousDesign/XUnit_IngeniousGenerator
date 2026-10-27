@@ -17,7 +17,7 @@ public sealed class TestProjectScaffolderTests : IDisposable
     }
 
     /// <summary>
-    /// 修飾子のないクラス（internal）と internal の列挙型を、Fix と同じく InternalsVisibleTo を追加した前提でテストする
+    /// 修飾子のないクラス（internal）と internal の列挙型も、パッケージの targets（InternalsVisibleTo）を読み込んだプロダクトでテストできる
     /// </summary>
     [Fact]
     public async Task Create_NewTestProject_AddsToSolutionAndGeneratedTestsPass()
@@ -43,17 +43,19 @@ public sealed class TestProjectScaffolderTests : IDisposable
         var productDirectory = Path.Combine(_root, "Product");
         Directory.CreateDirectory(Path.Combine(productDirectory, "Domain"));
         var productProject = Path.Combine(productDirectory, "Product.csproj");
-        await File.WriteAllTextAsync(productProject, """
+        // パッケージを入れたときと同じく、targets を読み込む（InternalsVisibleTo がテストプロジェクトに internal を公開する）
+        var targets = Path.Combine(AppContext.BaseDirectory, "XUnit_IngeniousGenerator.targets");
+        await File.WriteAllTextAsync(productProject, $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <TargetFramework>net10.0</TargetFramework>
                 <Nullable>enable</Nullable>
                 <ImplicitUsings>enable</ImplicitUsings>
               </PropertyGroup>
+              <Import Project="{targets}" />
             </Project>
             """);
         await File.WriteAllTextAsync(Path.Combine(productDirectory, "Domain", "Calculator.cs"), calculator);
-        await File.WriteAllTextAsync(Path.Combine(productDirectory, "InternalsVisibleTo.cs"), InternalsVisibleToWriter.BuildCode("Product.Tests"));
         var solution = Path.Combine(_root, "Sample.slnx");
         await File.WriteAllTextAsync(solution, """
             <Solution>

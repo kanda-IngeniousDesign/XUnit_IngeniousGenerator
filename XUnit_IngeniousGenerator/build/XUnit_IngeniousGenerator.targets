@@ -25,6 +25,15 @@
                      Visible="false" />
   </ItemGroup>
 
+  <!--
+    修飾子のないクラスは internal で、テストプロジェクトからは見えない。生成したテストがビルドできるよう、
+    テストプロジェクト（フォルダ名をアセンブリ名とみなす）に internal を公開する。
+    利用者のプロジェクトにファイルを追加したり csproj を編集したりせずに済むよう、パッケージ側で設定する。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="$([System.IO.Path]::GetFileName($(IngeniousTestProjectDirectory.TrimEnd('/').TrimEnd('\'))))" />
+  </ItemGroup>
+
   <ItemGroup>
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="IngeniousTestFile" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="IngeniousTestProjectFile" />

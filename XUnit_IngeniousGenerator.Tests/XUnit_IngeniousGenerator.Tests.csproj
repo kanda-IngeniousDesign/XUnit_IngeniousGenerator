@@ -26,4 +26,9 @@
     <ProjectReference Include="..\XUnit_IngeniousGenerator\XUnit_IngeniousGenerator.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 通しテストで、プロダクトのプロジェクトにパッケージの targets を読み込ませるため -->
+    <None Include="..\XUnit_IngeniousGenerator\build\XUnit_IngeniousGenerator.targets" Link="XUnit_IngeniousGenerator.targets" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

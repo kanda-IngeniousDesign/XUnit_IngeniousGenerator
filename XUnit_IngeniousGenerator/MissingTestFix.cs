@@ -11,7 +11,6 @@ namespace XUnit_IngeniousGenerator;
 
 // プロダクトコードは書き換えない。テストコードの生成はテストプロジェクトへのファイル追加・追記だけで、
 // もう一方は「// Ignore TEST001」「// Ignore TEST002」を挿入する抑制専用のFix。
-// 例外として、internal のクラスでテストプロジェクトへの InternalsVisibleTo がなければ、それを書いたファイルをプロダクトに1つ追加する。
 // ・TEST001（クラス名）: クラス全体のテストを生成する（テストプロジェクトがなければ作成する）
 // ・TEST001（関数名）  : その関数のテストだけを既存のテストファイルに追加する
 // ・TEST002（関数名）  : 自動では生成できないため、Ignore だけを出す
@@ -81,14 +80,11 @@ public class MissingTestFix : CodeFixProvider
         foreach (var testProject in testProjects)
         {
             var testProjectId = testProject.Id;
-            var testAssemblyName = testProject.AssemblyName;
             context.RegisterCodeFix(
                 CodeAction.Create(
                     title: onlyMember is null ? $"Fix : テストコードを生成する（{testProject.Name}）" : $"Fix : この関数のテストコードを追加する（{testProject.Name}）",
-                    createChangedSolution: async c => InternalsVisibleToWriter.AddIfNeeded(
-                        await TestDocumentWriter.AddOrMergeTestDocumentAsync(document, targetType, semanticModel.Compilation, testProjectId, onlyMember, c)
-                            .ConfigureAwait(false),
-                        document.Project.Id, targetType, semanticModel.Compilation, testAssemblyName),
+                    createChangedSolution: c => TestDocumentWriter.AddOrMergeTestDocumentAsync(
+                        document, targetType, semanticModel.Compilation, testProjectId, onlyMember, c),
                     equivalenceKey: $"GenerateTest:{testProject.Name}"),
                 diagnostic);
         }

@@ -14,7 +14,6 @@ namespace XUnit_IngeniousGenerator;
 //                   追加ファイルとして csproj とテストファイルを作らせる（ファイルの作成として反映され、csproj は変更されない）。
 //                   ソリューションへの追加（dotnet sln add）も実行されないため、Fix の適用でエディターが csproj を書き出すのを
 //                   裏で待ってから追加する（以前はテストファイルの先頭に案内コメントを入れていたが、残り続けるうえ重複したため廃止）
-// どちらでも、internal のクラスなら InternalsVisibleTo を書いたファイルを、プロダクトのプロジェクトに通常のファイルとして追加する
 public sealed class CreateTestProjectCodeAction : CodeAction
 {
     private readonly Document _document;
@@ -55,9 +54,7 @@ public sealed class CreateTestProjectCodeAction : CodeAction
     /// <returns>プレビューの操作</returns>
     protected override Task<IEnumerable<CodeActionOperation>> ComputePreviewOperationsAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult(_useFileEdits
-            ? BuildOperations(addToSolution: false)
-            : BuildOperations(addToSolution: false).OfType<ApplyChangesOperation>().Cast<CodeActionOperation>());
+        return Task.FromResult(_useFileEdits ? BuildOperations(addToSolution: false) : []);
     }
 
     /// <summary>
@@ -74,18 +71,11 @@ public sealed class CreateTestProjectCodeAction : CodeAction
         // プロダクトのプロジェクトから上へたどって、利用者のソリューションを探す
         var solutionPath = TestProjectScaffolder.FindSolution(productProjectPath);
 
-        var project = _document.Project;
-        if (!_useFileEdits)
-        {
-            var createProject = new CreateTestProjectOperation(Title, _testProjectDirectory, productProjectPath, solutionPath, relativePath, code);
-            var granted = InternalsVisibleToWriter.AddIfNeeded(project.Solution, project.Id, _targetType, _compilation, TestProjectName);
-            return granted == project.Solution ? [createProject] : [new ApplyChangesOperation(granted), createProject];
-        }
+        if (!_useFileEdits) return [new CreateTestProjectOperation(Title, _testProjectDirectory, productProjectPath, solutionPath, relativePath, code)];
 
         // VS Code は操作の実行（dotnet sln add）を読み飛ばすため、エディターが csproj を書き出したら、裏でソリューションに追加する
         if (addToSolution) _ = TestProjectScaffolder.AddToSolutionWhenCreatedAsync(solutionPath, Path.Combine(_testProjectDirectory, TestProjectName + ".csproj"));
-        var solution = AddProjectFiles(productProjectPath, relativePath, code);
-        return [new ApplyChangesOperation(InternalsVisibleToWriter.AddIfNeeded(solution, project.Id, _targetType, _compilation, TestProjectName))];
+        return [new ApplyChangesOperation(AddProjectFiles(productProjectPath, relativePath, code))];
     }
 
     /// <summary>
