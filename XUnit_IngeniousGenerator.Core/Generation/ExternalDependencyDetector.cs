@@ -1,3 +1,4 @@
+using XUnit_IngeniousGenerator.Core.Evaluation;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -26,12 +27,24 @@ internal static class ExternalDependencyDetector
     ];
 
     /// <summary>
-    /// メソッド本体が直接使っている、結果が安定しない処理を探す
+    /// メソッド本体と、そこから呼んでいる同じクラスの関数が使っている、結果が安定しない処理を探す
     /// </summary>
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
     /// <returns>見つかった処理（なければnull）。NonDeterministic は時刻・乱数など実行するたびに結果が変わるもの</returns>
     public static (bool NonDeterministic, string Reason)? Find(BaseMethodDeclarationSyntax declaration, SemanticModel model)
+    {
+        return FindIn(declaration, model)
+            ?? SameClassCall.FindReachable(declaration, model).Select(c => FindIn(c.Declaration, c.Model)).FirstOrDefault(f => f is not null);
+    }
+
+    /// <summary>
+    /// 1つの関数の本体が直接使っている、結果が安定しない処理を探す
+    /// </summary>
+    /// <param name="declaration">関数の宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <returns>見つかった処理（なければnull）</returns>
+    private static (bool NonDeterministic, string Reason)? FindIn(BaseMethodDeclarationSyntax declaration, SemanticModel model)
     {
         foreach (var name in declaration.DescendantNodes().OfType<SimpleNameSyntax>())
         {

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using XUnit_IngeniousGenerator.Core.Guards;
 using XUnit_IngeniousGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
@@ -14,12 +15,14 @@ public sealed class MethodInterpreter
     private readonly SemanticModel _model;
     private readonly IMethodSymbol _member;
     private readonly Dictionary<ISymbol, object?> _variables = new(SymbolEqualityComparer.Default);
+    private readonly ImmutableHashSet<IMethodSymbol> _callStack;
     private object? _returnValue;
 
-    private MethodInterpreter(SemanticModel model, IMethodSymbol member)
+    private MethodInterpreter(SemanticModel model, IMethodSymbol member, ImmutableHashSet<IMethodSymbol> callStack)
     {
         _model = model;
         _member = member;
+        _callStack = callStack.Add(member);
     }
 
     /// <summary>
@@ -48,7 +51,7 @@ public sealed class MethodInterpreter
     public static EvaluationResult Evaluate(
         BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments)
     {
-        var interpreter = new MethodInterpreter(model, member);
+        var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default));
         for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = arguments[i];
 
         try
@@ -228,6 +231,9 @@ public sealed class MethodInterpreter
     {
         switch (expression)
         {
+            case InvocationExpressionSyntax invocation when SameClassCall.Resolve(invocation, _model) is { } call:
+                Call(call);
+                return;
             case InvocationExpressionSyntax invocation:
                 ExecuteGuardHelper(invocation);
                 return;
@@ -317,7 +323,9 @@ public sealed class MethodInterpreter
                 ? EvaluateConverted(conditional.WhenTrue)
                 : EvaluateConverted(conditional.WhenFalse),
             CastExpressionSyntax cast => ClrOperations.Convert(EvaluateConverted(cast.Expression), _model.GetTypeInfo(cast).Type!),
-            InvocationExpressionSyntax invocation => KnownMethods.Invoke(invocation, _model, EvaluateConverted),
+            InvocationExpressionSyntax invocation => SameClassCall.Resolve(invocation, _model) is { } call
+                ? Call(call)
+                : KnownMethods.Invoke(invocation, _model, EvaluateConverted),
             MemberAccessExpressionSyntax memberAccess => KnownMethods.ReadMember(memberAccess, _model, EvaluateConverted),
             SwitchExpressionSyntax switchExpression => EvaluateSwitch(switchExpression),
             IsPatternExpressionSyntax isPattern => new PatternMatcher(_model).Matches(isPattern.Pattern, EvaluateConverted(isPattern.Expression)),
@@ -325,6 +333,46 @@ public sealed class MethodInterpreter
             InterpolatedStringExpressionSyntax => throw new UnsupportedSyntaxException("文字列補間（カルチャに依存するため）"),
             _ => throw new UnsupportedSyntaxException($"式 '{Shorten(expression)}'"),
         };
+    }
+
+    /// <summary>
+    /// 同じクラスの関数を呼び出し、その中身も評価する（再帰と、深すぎる呼び出しは対象外）
+    /// </summary>
+    /// <param name="call">呼び出し</param>
+    /// <returns>戻り値（void の関数はnull）</returns>
+    private object? Call(SameClassCall call)
+    {
+        if (_callStack.Contains(call.Method)) throw new UnsupportedSyntaxException($"再帰呼び出し '{call.Method.Name}'");
+        if (SameClassCall.MaxDepth <= _callStack.Count) throw new UnsupportedSyntaxException($"深い呼び出し '{call.Method.Name}'");
+
+        var callee = new MethodInterpreter(call.Model, call.Method, _callStack);
+        foreach (var argument in call.Arguments)
+        {
+            callee._variables[argument.Parameter] = argument.Expression is null ? argument.DefaultValue : EvaluateConverted(argument.Expression);
+        }
+
+        return callee.RunCallee(call.Declaration);
+    }
+
+    /// <summary>
+    /// 呼び出された関数の本体を評価する（例外は呼び出し元へそのまま伝える）
+    /// </summary>
+    /// <param name="declaration">関数の宣言</param>
+    /// <returns>戻り値（void の関数はnull）</returns>
+    private object? RunCallee(BaseMethodDeclarationSyntax declaration)
+    {
+        if (declaration.ExpressionBody is { } arrow)
+        {
+            if (!_member.ReturnsVoid) return EvaluateConverted(arrow.Expression);
+
+            ExecuteExpressionStatement(arrow.Expression);
+            return null;
+        }
+
+        var flow = Execute(declaration.Body!);
+        if (flow == Flow.Return) return _returnValue;
+        if (_member.ReturnsVoid) return null;
+        throw new UnsupportedSyntaxException($"値を返さずに終了する経路 '{_member.Name}'");
     }
 
     /// <summary>

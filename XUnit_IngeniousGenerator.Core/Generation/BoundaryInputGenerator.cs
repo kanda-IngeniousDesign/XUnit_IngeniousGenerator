@@ -1,3 +1,4 @@
+using XUnit_IngeniousGenerator.Core.Evaluation;
 using XUnit_IngeniousGenerator.Core.Guards;
 using XUnit_IngeniousGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
@@ -365,9 +366,10 @@ internal static class BoundaryInputGenerator
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
     /// <param name="member">メソッド</param>
+    /// <param name="depth">同じクラスの関数をたどった深さ</param>
     /// <returns>引数ごとの定数</returns>
     private static Dictionary<IParameterSymbol, List<object>> CollectBoundaryConstants(
-        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member)
+        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, int depth = 0)
     {
         var result = new Dictionary<IParameterSymbol, List<object>>(SymbolEqualityComparer.Default);
         foreach (var node in declaration.DescendantNodes())
@@ -386,11 +388,49 @@ internal static class BoundaryInputGenerator
             var constant = model.GetConstantValue(constantExpression);
             if (parameter is null || !constant.HasValue || constant.Value is null) continue;
 
-            if (!result.TryGetValue(parameter, out var list)) result[parameter] = list = [];
-            if (!list.Contains(constant.Value)) list.Add(constant.Value);
+            AddConstant(result, parameter, constant.Value);
         }
 
+        if (depth < SameClassCall.MaxDepth) AddCalleeConstants(result, declaration, model, member, depth);
         return result;
+    }
+
+    /// <summary>
+    /// 引数をそのまま同じクラスの関数に渡していれば、呼び出し先で比べている定数も、その引数の定数に加える
+    /// </summary>
+    /// <param name="result">引数ごとの定数（追加先）</param>
+    /// <param name="declaration">メソッドの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド</param>
+    /// <param name="depth">同じクラスの関数をたどった深さ</param>
+    private static void AddCalleeConstants(
+        Dictionary<IParameterSymbol, List<object>> result, BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, int depth)
+    {
+        foreach (var invocation in declaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (SameClassCall.Resolve(invocation, model) is not { } call || SymbolEqualityComparer.Default.Equals(call.Method, member)) continue;
+
+            var calleeConstants = CollectBoundaryConstants(call.Declaration, call.Model, call.Method, depth + 1);
+            foreach (var argument in call.Arguments)
+            {
+                var parameter = argument.Expression is null ? null : ConditionParser.GetParameter(argument.Expression, model, member);
+                if (parameter is null || !calleeConstants.TryGetValue(argument.Parameter, out var constants)) continue;
+
+                foreach (var constant in constants) AddConstant(result, parameter, constant);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 引数の定数を重複なく追加する
+    /// </summary>
+    /// <param name="result">引数ごとの定数（追加先）</param>
+    /// <param name="parameter">引数</param>
+    /// <param name="constant">定数</param>
+    private static void AddConstant(Dictionary<IParameterSymbol, List<object>> result, IParameterSymbol parameter, object constant)
+    {
+        if (!result.TryGetValue(parameter, out var list)) result[parameter] = list = [];
+        if (!list.Contains(constant)) list.Add(constant);
     }
 
     /// <summary>
