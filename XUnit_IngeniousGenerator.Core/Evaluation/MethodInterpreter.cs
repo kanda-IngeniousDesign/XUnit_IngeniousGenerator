@@ -16,13 +16,15 @@ public sealed class MethodInterpreter
     private readonly IMethodSymbol _member;
     private readonly Dictionary<ISymbol, object?> _variables = new(SymbolEqualityComparer.Default);
     private readonly ImmutableHashSet<IMethodSymbol> _callStack;
+    private readonly StepBudget _budget;
     private object? _returnValue;
 
-    private MethodInterpreter(SemanticModel model, IMethodSymbol member, ImmutableHashSet<IMethodSymbol> callStack)
+    private MethodInterpreter(SemanticModel model, IMethodSymbol member, ImmutableHashSet<IMethodSymbol> callStack, StepBudget budget)
     {
         _model = model;
         _member = member;
         _callStack = callStack.Add(member);
+        _budget = budget;
     }
 
     /// <summary>
@@ -51,7 +53,7 @@ public sealed class MethodInterpreter
     public static EvaluationResult Evaluate(
         BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments)
     {
-        var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default));
+        var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
         for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = arguments[i];
 
         try
@@ -310,6 +312,7 @@ public sealed class MethodInterpreter
     /// <returns>式の値</returns>
     private object? Evaluate(ExpressionSyntax expression)
     {
+        _budget.Consume();
         var constant = _model.GetConstantValue(expression);
         if (constant.HasValue) return constant.Value;
 
@@ -345,7 +348,7 @@ public sealed class MethodInterpreter
         if (_callStack.Contains(call.Method)) throw new UnsupportedSyntaxException($"再帰呼び出し '{call.Method.Name}'");
         if (SameClassCall.MaxDepth <= _callStack.Count) throw new UnsupportedSyntaxException($"深い呼び出し '{call.Method.Name}'");
 
-        var callee = new MethodInterpreter(call.Model, call.Method, _callStack);
+        var callee = new MethodInterpreter(call.Model, call.Method, _callStack, _budget);
         foreach (var argument in call.Arguments)
         {
             callee._variables[argument.Parameter] = argument.Expression is null ? argument.DefaultValue : EvaluateConverted(argument.Expression);
@@ -525,5 +528,22 @@ public sealed class MethodInterpreter
         const int MaxLength = 60;
         var text = string.Join(" ", node.ToString().Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()));
         return text.Length <= MaxLength ? text : text.Substring(0, MaxLength) + "…";
+    }
+
+    /// <summary>
+    /// 1回の評価で計算できる式の数の上限（同じクラスの関数の呼び出しが多いと計算量が爆発し、IDE の解析が終わらなくなるため）
+    /// </summary>
+    private sealed class StepBudget
+    {
+        private const int MaxSteps = 100_000;
+        private int _used;
+
+        /// <summary>
+        /// 式を1つ計算した分を数え、上限を超えたら評価をやめる
+        /// </summary>
+        public void Consume()
+        {
+            if (MaxSteps < ++_used) throw new UnsupportedSyntaxException("計算量が多すぎる（同じクラスの関数の呼び出しが多い）");
+        }
     }
 }
