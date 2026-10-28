@@ -35,7 +35,7 @@ internal static class BoundaryInputGenerator
         var leadingGuards = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases);
         var guardConditions = (avoidBodyThrows ? leadingGuards.Concat(GuardExtractor.CollectThrowConditions(declaration, model, member)) : leadingGuards)
             .ToList();
-        var boundaries = CollectBoundaryConstants(declaration, model, member);
+        var boundaries = CollectBoundaryConstants(declaration, model, member, new Dictionary<IMethodSymbol, Dictionary<IParameterSymbol, List<object>>>(SymbolEqualityComparer.Default));
 
         var builder = new InputsBuilder();
         foreach (var parameter in member.Parameters)
@@ -366,12 +366,17 @@ internal static class BoundaryInputGenerator
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
     /// <param name="member">メソッド</param>
+    /// <param name="calleeResults">たどった関数ごとの結果（同じ関数を何度もたどり直さないため。呼び出しが多いと処理量が爆発する）</param>
     /// <param name="depth">同じクラスの関数をたどった深さ</param>
     /// <returns>引数ごとの定数</returns>
     private static Dictionary<IParameterSymbol, List<object>> CollectBoundaryConstants(
-        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, int depth = 0)
+        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member,
+        Dictionary<IMethodSymbol, Dictionary<IParameterSymbol, List<object>>> calleeResults, int depth = 0)
     {
         var result = new Dictionary<IParameterSymbol, List<object>>(SymbolEqualityComparer.Default);
+
+        // 再帰・相互呼び出しでたどり中の関数に戻ったときは、空の結果を返す
+        calleeResults[member] = result;
         foreach (var node in declaration.DescendantNodes())
         {
             var (subject, constantExpression) = node switch
@@ -391,7 +396,7 @@ internal static class BoundaryInputGenerator
             AddConstant(result, parameter, constant.Value);
         }
 
-        if (depth < SameClassCall.MaxDepth) AddCalleeConstants(result, declaration, model, member, depth);
+        if (depth < SameClassCall.MaxDepth) AddCalleeConstants(result, declaration, model, member, calleeResults, depth);
         return result;
     }
 
@@ -402,15 +407,17 @@ internal static class BoundaryInputGenerator
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
     /// <param name="member">メソッド</param>
+    /// <param name="calleeResults">たどった関数ごとの結果</param>
     /// <param name="depth">同じクラスの関数をたどった深さ</param>
     private static void AddCalleeConstants(
-        Dictionary<IParameterSymbol, List<object>> result, BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, int depth)
+        Dictionary<IParameterSymbol, List<object>> result, BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member,
+        Dictionary<IMethodSymbol, Dictionary<IParameterSymbol, List<object>>> calleeResults, int depth)
     {
         foreach (var invocation in declaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             if (SameClassCall.Resolve(invocation, model) is not { } call || SymbolEqualityComparer.Default.Equals(call.Method, member)) continue;
 
-            var calleeConstants = CollectBoundaryConstants(call.Declaration, call.Model, call.Method, depth + 1);
+            var calleeConstants = GetCalleeConstants(call, calleeResults, depth);
             foreach (var argument in call.Arguments)
             {
                 var parameter = argument.Expression is null ? null : ConditionParser.GetParameter(argument.Expression, model, member);
@@ -419,6 +426,21 @@ internal static class BoundaryInputGenerator
                 foreach (var constant in constants) AddConstant(result, parameter, constant);
             }
         }
+    }
+
+    /// <summary>
+    /// 呼び出し先の関数で比べている定数を返す（一度たどった関数は結果を使い回す）
+    /// </summary>
+    /// <param name="call">同じクラスの関数の呼び出し</param>
+    /// <param name="calleeResults">たどった関数ごとの結果</param>
+    /// <param name="depth">呼び出し元までたどった深さ</param>
+    /// <returns>呼び出し先の引数ごとの定数</returns>
+    private static Dictionary<IParameterSymbol, List<object>> GetCalleeConstants(
+        SameClassCall call, Dictionary<IMethodSymbol, Dictionary<IParameterSymbol, List<object>>> calleeResults, int depth)
+    {
+        return calleeResults.TryGetValue(call.Method, out var cached)
+            ? cached
+            : CollectBoundaryConstants(call.Declaration, call.Model, call.Method, calleeResults, depth + 1);
     }
 
     /// <summary>
