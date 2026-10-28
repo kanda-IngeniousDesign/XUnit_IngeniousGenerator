@@ -26,7 +26,7 @@ internal abstract class PlannedTest
     public string TestName { get; }
 
     /// <summary>テスト対象のインスタンス（_sut）を使うか</summary>
-    public bool UsesSut => Member.MethodKind is MethodKind.Ordinary or MethodKind.PropertySet && !Member.IsStatic;
+    public virtual bool UsesSut => Member.MethodKind is MethodKind.Ordinary or MethodKind.PropertySet && !Member.IsStatic;
 
     /// <summary>
     /// テストクラスのメンバーを組み立てる

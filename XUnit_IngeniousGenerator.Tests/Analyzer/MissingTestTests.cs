@@ -23,6 +23,15 @@ public class MissingTestTests
         dotnet_diagnostic.TEST002.severity = warning
         """;
 
+    private const string LoaderTestFilePath = "/0/Product.Tests/LoaderTests.cs";
+
+    private const string LoaderTestFileConfig = EnableRule + """
+
+
+        [/0/Product.Tests/LoaderTests.cs]
+        build_metadata.AdditionalFiles.IngeniousTestFile = true
+        """;
+
     private const string EnableRuleWithTestFile = EnableRule + """
 
 
@@ -152,8 +161,8 @@ public class MissingTestTests
     }
 
     /// <summary>
-    /// 自動生成できない関数には、理由とともに TEST002 が出て、TEST001 は出ないことを確認する
-    /// （Ignore TEST002 を付けた関数には出ない）
+    /// テストファイルがあれば、自動生成できない関数には理由とともに TEST002 が出ることを確認する
+    /// （Ignore TEST002 を付けた関数、テストしていない一覧（関数名_NotTested）に載っている関数には出ない）
     /// </summary>
     [Fact]
     public async Task NotGeneratableMember_ReportsTest002WithReason()
@@ -166,10 +175,76 @@ public class MissingTestTests
 
                 // Ignore TEST002
                 public string LoadAgain(string path) => File.ReadAllText(path);
+
+                public string LoadListed(string path) => File.ReadAllText(path);
             }
-            """, EnableRule);
+            """, LoaderTestFileConfig);
+        test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { public void LoadListed_NotTested() { } }"));
         test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.NotGeneratableRule).WithLocation(0)
             .WithArguments("Load", "'File' は外部環境（ファイル・DB・通信など）に依存するため、単体テストでは担保しません（UIオーケストレーター側で確認）"));
+
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// テストファイルがなければ、自動生成できない関数しかないクラスにも、クラス名に TEST001 が出ることを確認する
+    /// （Fix でテストファイルを作り、テストしていない一覧に載せる。public でないクラスも同じ）
+    /// </summary>
+    [Theory]
+    [InlineData("public")]
+    [InlineData("internal")]
+    public async Task ClassWithOnlyNotGeneratableMembers_ReportsTest001OnClass(string modifier)
+    {
+        var test = CreateTest($$"""
+            using System.IO;
+            {{modifier}} class {|#0:Loader|}
+            {
+                public string Load(string path) => File.ReadAllText(path);
+            }
+            """, EnableRule);
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.ClassRule).WithLocation(0).WithArguments("Loader"));
+
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// 自動生成の対象外の関数（計算するプロパティの get など）も、処理があれば TEST002 で知らせ、
+    /// フィールドを返すだけの get には出さないことを確認する
+    /// </summary>
+    [Fact]
+    public async Task ComputedGetter_ReportsTest002AndPlainGetterDoesNot()
+    {
+        var test = CreateTest("""
+            public class Loader
+            {
+                private int _count;
+
+                public int {|#0:Double|} => _count * 2;
+
+                public int Count => _count;
+            }
+            """, LoaderTestFileConfig);
+        test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { }"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.NotGeneratableRule).WithLocation(0)
+            .WithArguments("Double", "プロパティの get は自動生成の対象外です"));
+
+        await test.RunAsync();
+    }
+
+    /// <summary>
+    /// テストしていない一覧に載っていても、自動生成できるようになった関数には、もう一度 TEST001 が出ることを確認する
+    /// </summary>
+    [Fact]
+    public async Task ListedButGeneratableMember_ReportsTest001()
+    {
+        var test = CreateTest("""
+            public class Loader
+            {
+                public int {|#0:Twice|}(int value) => value * 2;
+            }
+            """, LoaderTestFileConfig);
+        test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { public void Twice_NotTested() { } }"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments("Twice", "LoaderTests"));
 
         await test.RunAsync();
     }

@@ -13,8 +13,8 @@ public sealed class GenerationOptions
     /// </summary>
     /// <param name="useMoq">インターフェースなどの依存を Moq でモックするか</param>
     /// <param name="useVerify">静的に計算できない戻り値を Verify で記録するか</param>
-    /// <param name="onlyMember">このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</param>
-    public GenerationOptions(bool useMoq, bool useVerify, IMethodSymbol? onlyMember = null)
+    /// <param name="onlyMember">この関数（プロパティならその get / set）のテストだけを生成する（null ならクラス全体）</param>
+    public GenerationOptions(bool useMoq, bool useVerify, ISymbol? onlyMember = null)
     {
         UseMoq = useMoq;
         UseVerify = useVerify;
@@ -30,15 +30,27 @@ public sealed class GenerationOptions
     /// <summary>静的に計算できない戻り値を Verify で記録するか</summary>
     public bool UseVerify { get; }
 
-    /// <summary>このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</summary>
-    public IMethodSymbol? OnlyMember { get; }
+    /// <summary>この関数（プロパティならその get / set）のテストだけを生成する（null ならクラス全体）</summary>
+    public ISymbol? OnlyMember { get; }
+
+    /// <summary>
+    /// 関数が、生成する範囲（OnlyMember）に含まれるかを判定する
+    /// </summary>
+    /// <param name="member">関数</param>
+    /// <returns>含まれればtrue</returns>
+    public bool Includes(IMethodSymbol member)
+    {
+        return OnlyMember is null
+            || SymbolEqualityComparer.Default.Equals(member, OnlyMember)
+            || SymbolEqualityComparer.Default.Equals(member.AssociatedSymbol, OnlyMember);
+    }
 
     /// <summary>
     /// 指定のメソッド・コンストラクタのテストだけを生成する設定を作る
     /// </summary>
-    /// <param name="member">メソッド・コンストラクタ（null ならクラス全体）</param>
+    /// <param name="member">関数・プロパティ（null ならクラス全体）</param>
     /// <returns>生成の設定</returns>
-    public GenerationOptions WithOnlyMember(IMethodSymbol? member)
+    public GenerationOptions WithOnlyMember(ISymbol? member)
     {
         return new GenerationOptions(UseMoq, UseVerify, member);
     }

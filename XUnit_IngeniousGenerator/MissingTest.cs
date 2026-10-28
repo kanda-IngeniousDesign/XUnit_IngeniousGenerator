@@ -72,9 +72,8 @@ public class MissingTest : DiagnosticAnalyzer
         if (GeneratedCode.IsGeneratedFile(context.Node.SyntaxTree)) return;
         var classDecl = (ClassDeclarationSyntax)context.Node;
 
-        // 入れ子のクラスは外側のクラスのテストで扱い、抽象クラスは具象クラスのテストで扱う
+        // 入れ子のクラスの関数は、外側のクラスのテストファイルで扱う（record・構造体の中のクラスは解析の対象外）
         if (classDecl.Parent is TypeDeclarationSyntax) return;
-        if (classDecl.Modifiers.Any(SyntaxKind.AbstractKeyword)) return;
         if (IsTestProject(context.Compilation)) return;
 
         // 判定には生成と同じ計画の処理を使い重いため、どちらのルールも有効でなければ何もしない
@@ -92,17 +91,23 @@ public class MissingTest : DiagnosticAnalyzer
         var existingTestNames = testFileText is null ? [] : TestCoverageInspector.CollectTestNames(testFileText, testClassName);
         var coverages = TestCoverageInspector.Inspect(symbol, context.Compilation, GetGenerationOptions(context), existingTestNames);
 
-        // テストファイルがなければクラス名に1つだけ出す（partial クラスは最初の宣言にだけ報告する）
-        var first = symbol.DeclaringSyntaxReferences.FirstOrDefault();
-        var isFirstDeclaration = first is not null && first.SyntaxTree == tree && first.Span == classDecl.Span;
-        if (reportsMissing && testFileText is null && isFirstDeclaration && coverages.Any(c => c.Status == CoverageStatus.Generatable))
+        // テストファイルがなければクラス名に1つだけ出す（partial クラスは最初の宣言にだけ報告する）。
+        // Fix で、生成できるテストと、生成できない関数のスキップのテスト（テストしていない一覧）をまとめて作る
+        if (testFileText is null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(ClassRule, classDecl.Identifier.GetLocation(), symbol.Name));
+            var first = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+            var isFirstDeclaration = first is not null && first.SyntaxTree == tree && first.Span == classDecl.Span;
+            if (reportsMissing && isFirstDeclaration && coverages.Any(c => c.Status is CoverageStatus.Generatable or CoverageStatus.NotGeneratable))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(ClassRule, classDecl.Identifier.GetLocation(), symbol.Name));
+            }
+
+            return;
         }
 
         foreach (var coverage in coverages)
         {
-            ReportMember(context, classDecl, coverage, reportsMissing && testFileText is not null, reportsNotGeneratable);
+            ReportMember(context, classDecl, coverage, reportsMissing, reportsNotGeneratable);
         }
     }
 
@@ -124,7 +129,7 @@ public class MissingTest : DiagnosticAnalyzer
         var name = coverage.Member.MethodKind == MethodKind.Constructor ? coverage.Member.ContainingType.Name : identifier.ValueText;
         if (coverage.Status == CoverageStatus.Generatable && reportsMissing && !node.HasIgnoreComment(DiagnosticId))
         {
-            context.ReportDiagnostic(Diagnostic.Create(MemberRule, identifier.GetLocation(), name, coverage.Member.ContainingType.Name + TestClassSuffix));
+            context.ReportDiagnostic(Diagnostic.Create(MemberRule, identifier.GetLocation(), name, classDecl.Identifier.ValueText + TestClassSuffix));
         }
         else if (coverage.Status == CoverageStatus.NotGeneratable && reportsNotGeneratable && !node.HasIgnoreComment(NotGeneratableDiagnosticId))
         {
@@ -133,7 +138,7 @@ public class MissingTest : DiagnosticAnalyzer
     }
 
     /// <summary>
-    /// 関数の宣言（メソッド・コンストラクタ、set アクセサーはプロパティ）と名前のトークンを、このクラス宣言の中から探す
+    /// 関数の宣言（メソッド・コンストラクタ・演算子、get / set アクセサーはプロパティ・インデクサー）と名前のトークンを、このクラス宣言の中から探す
     /// </summary>
     /// <param name="member">関数のシンボル</param>
     /// <param name="classDecl">探すクラス宣言</param>
@@ -144,33 +149,47 @@ public class MissingTest : DiagnosticAnalyzer
         {
             if (reference.SyntaxTree != classDecl.SyntaxTree || !classDecl.Span.Contains(reference.Span)) continue;
 
-            switch (reference.GetSyntax())
-            {
-                case MethodDeclarationSyntax method:
-                    return (method, method.Identifier);
-                case ConstructorDeclarationSyntax constructor:
-                    return (constructor, constructor.Identifier);
-                case AccessorDeclarationSyntax { Parent.Parent: PropertyDeclarationSyntax property }:
-                    return (property, property.Identifier);
-            }
+            var syntax = reference.GetSyntax();
+            var owner = syntax is AccessorDeclarationSyntax or ArrowExpressionClauseSyntax ? syntax.FirstAncestorOrSelf<BasePropertyDeclarationSyntax>() : syntax;
+            var found = GetNameToken(owner);
+            if (found is not null) return found;
         }
 
         return null;
     }
 
     /// <summary>
-    /// 名前のトークンが指す関数（メソッド・コンストラクタ・プロパティの set アクセサー）のシンボルを返す（Fix で使う）
+    /// 宣言と、警告を出す名前のトークンを返す
+    /// </summary>
+    /// <param name="declaration">関数・プロパティ・インデクサーの宣言</param>
+    /// <returns>宣言と名前のトークン（対象外の宣言ならnull）</returns>
+    private static (MemberDeclarationSyntax Node, SyntaxToken Identifier)? GetNameToken(SyntaxNode? declaration)
+    {
+        return declaration switch
+        {
+            MethodDeclarationSyntax method => (method, method.Identifier),
+            ConstructorDeclarationSyntax constructor => (constructor, constructor.Identifier),
+            PropertyDeclarationSyntax property => (property, property.Identifier),
+            IndexerDeclarationSyntax indexer => (indexer, indexer.ThisKeyword),
+            OperatorDeclarationSyntax op => (op, op.OperatorToken),
+            ConversionOperatorDeclarationSyntax conversion => (conversion, conversion.OperatorKeyword),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// 名前のトークンが指す関数（メソッド・コンストラクタ・演算子）またはプロパティ・インデクサーのシンボルを返す（Fix で使う）
     /// </summary>
     /// <param name="model">セマンティックモデル</param>
     /// <param name="declaration">関数の宣言</param>
     /// <param name="cancellationToken">キャンセル</param>
-    /// <returns>関数のシンボル（関数でなければnull）</returns>
-    public static IMethodSymbol? GetMemberSymbol(SemanticModel model, SyntaxNode declaration, CancellationToken cancellationToken)
+    /// <returns>シンボル（関数・プロパティでなければnull）</returns>
+    public static ISymbol? GetMemberSymbol(SemanticModel model, SyntaxNode declaration, CancellationToken cancellationToken)
     {
         return model.GetDeclaredSymbol(declaration, cancellationToken) switch
         {
             IMethodSymbol method => method,
-            IPropertySymbol property => property.SetMethod,
+            IPropertySymbol property => property,
             _ => null,
         };
     }

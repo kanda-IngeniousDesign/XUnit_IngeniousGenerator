@@ -16,19 +16,20 @@ internal static class MemberDisplay
     public static string Of(IMethodSymbol member)
     {
         if (member.MethodKind == MethodKind.PropertySet) return $"{GetName(member)}.set";
+        if (member.MethodKind == MethodKind.PropertyGet) return $"{GetName(member)}.get";
 
         var parameters = string.Join(", ", member.Parameters.Select(p => p.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
         return $"{GetName(member)}({parameters})";
     }
 
     /// <summary>
-    /// テスト名に使うメンバー名を返す（コンストラクタは Constructor、set アクセサーはプロパティ名）
+    /// テスト名に使うメンバー名を返す（コンストラクタは Constructor、set アクセサーはプロパティ名。オーバーロード・入れ子の区別は TestTargets.GetBaseName）
     /// </summary>
     /// <param name="member">メソッド・コンストラクタ・set アクセサー</param>
     /// <returns>メンバー名</returns>
     public static string GetTestName(IMethodSymbol member)
     {
-        return member.MethodKind == MethodKind.Constructor ? "Constructor" : GetName(member);
+        return TestTargets.GetBaseName(member);
     }
 
     /// <summary>
@@ -66,7 +67,7 @@ internal static class MemberDisplay
         return member switch
         {
             { MethodKind: MethodKind.Constructor } => member.ContainingType.Name,
-            { MethodKind: MethodKind.PropertySet, AssociatedSymbol: { } property } => property.Name,
+            { MethodKind: MethodKind.PropertySet or MethodKind.PropertyGet, AssociatedSymbol: { } property } => property.Name,
             _ => member.Name,
         };
     }

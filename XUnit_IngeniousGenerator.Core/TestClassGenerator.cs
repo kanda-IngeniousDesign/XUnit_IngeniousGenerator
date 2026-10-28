@@ -14,9 +14,6 @@ public static class TestClassGenerator
 {
     private const string TestClassSuffix = "Tests";
     private const string XUnitNamespace = "Xunit";
-    private const string ManualPrefix = "// 要手動: ";
-    private const string NotGeneratablePrefix = "// 生成不可: ";
-    private const string Indent = "    ";
 
     /// <summary>
     /// 対象クラスに対応するテストファイル1つ分のコードを生成する
@@ -51,60 +48,50 @@ public static class TestClassGenerator
             .AddMembers(WrapInNamespace(testNamespace, testClass))
             .NormalizeWhitespace(eol: "\r\n");
 
-        var comments = context.ManualItems.Select(i => ManualPrefix + i).Concat(context.NotGeneratableItems.Select(i => NotGeneratablePrefix + i)).ToList();
-        var formatted = Format(compilationUnit, comments);
-        return new GenerationResult(testClassName, formatted.ToFullString(), tests.Count, context.ManualItems, context.NotGeneratableItems);
+        var formatted = Format(compilationUnit);
+        var generatedCount = tests.Count(t => t is not NotTestedTestCase);
+        return new GenerationResult(testClassName, formatted.ToFullString(), generatedCount, context.ManualItems, context.NotGeneratableItems);
     }
 
     /// <summary>
-    /// クラス内の public なメソッド・コンストラクタから、例外テスト・戻り値テストを計画する
+    /// クラス（入れ子のクラスを含む）の関数ごとにテストを計画する。
+    /// 生成できない関数・生成できなかった部分は、理由つきのスキップのテスト（テストしていない一覧）にする
     /// </summary>
     /// <param name="targetType">テスト対象のクラス</param>
-    /// <param name="context">生成の情報</param>
+    /// <param name="context">生成の情報（要手動・生成不可の項目をここに集める）</param>
     /// <param name="sut">テスト対象のインスタンスの作り方</param>
     /// <returns>テストの一覧（テスト名の重複は除く）</returns>
     private static List<PlannedTest> PlanTests(
         INamedTypeSymbol targetType, GenerationContext context, out SutPlan sut)
     {
         sut = SutPlan.Create(targetType, context);
-        if (targetType.IsGenericType)
-        {
-            context.ManualItems.Add($"{targetType.Name}: ジェネリッククラスは型引数を決められないため対象外です");
-            return [];
-        }
+        var members = TestTargets.Collect(targetType)
+            .Where(context.Options.Includes)
+            .OrderBy(m => m.MethodKind == MethodKind.Constructor ? 0 : 1);
 
-        var planner = new MemberTestPlanner(context, sut);
-        var candidates = targetType.GetMembers()
-            .OfType<IMethodSymbol>()
-            .Where(IsTestTarget)
-            .Where(m => context.Options.OnlyMember is null || SymbolEqualityComparer.Default.Equals(m, context.Options.OnlyMember))
-            .OrderBy(m => m.MethodKind == MethodKind.Constructor ? 0 : 1)
-            .SelectMany(planner.Plan);
-
-        // テスト名は重複検出のキーにもなるため、同名になるもの（オーバーロードなど）は先勝ちにして残りを要手動にする
+        // テスト名は重複検出のキーにもなるため、同名になるものは先勝ちにして、残りはスキップのテストの理由にする
         var names = new HashSet<string>(StringComparer.Ordinal);
         var tests = new List<PlannedTest>();
-        foreach (var test in candidates)
+        foreach (var member in members)
         {
-            if (names.Add(test.TestName)) tests.Add(test);
-            else context.ManualItems.Add($"{MemberDisplay.Of(test.Member)}: テスト名 {test.TestName} が重複するため生成していません");
+            var plan = MemberPlan.Create(member, targetType, sut, context.Compilation, context.Options);
+            context.ManualItems.AddRange(plan.ManualItems);
+            context.NotGeneratableItems.AddRange(plan.NotGeneratableItems);
+
+            var reasons = plan.Reasons.ToList();
+            foreach (var test in plan.Tests)
+            {
+                if (names.Add(test.TestName)) tests.Add(test);
+                else reasons.Add($"テスト名 {test.TestName} が重複するため生成していません");
+            }
+
+            if (0 < reasons.Count && names.Add(TestTargets.GetBaseName(member) + TestTargets.NotTestedSuffix))
+            {
+                tests.Add(new NotTestedTestCase(member, reasons));
+            }
         }
 
         return tests;
-    }
-
-    /// <summary>
-    /// テスト生成の対象となるメンバー（public なメソッド・コンストラクタ・プロパティの set アクセサー）かを判定する
-    /// （init アクセサーはオブジェクト初期化子でしか呼べないため対象外）
-    /// </summary>
-    /// <param name="member">メンバー</param>
-    /// <returns>対象ならtrue</returns>
-    internal static bool IsTestTarget(IMethodSymbol member)
-    {
-        if (member.DeclaredAccessibility != Accessibility.Public || member.IsImplicitlyDeclared) return false;
-
-        return member.MethodKind is MethodKind.Ordinary or MethodKind.Constructor
-            || member is { MethodKind: MethodKind.PropertySet, IsInitOnly: false, AssociatedSymbol.DeclaredAccessibility: Accessibility.Public };
     }
 
     /// <summary>
@@ -140,12 +127,11 @@ public static class TestClassGenerator
     }
 
     /// <summary>
-    /// NormalizeWhitespace の結果に、メンバー間の空行・要手動/生成不可コメント・末尾の改行を加える
+    /// NormalizeWhitespace の結果に、メンバー間の空行・末尾の改行を加える
     /// </summary>
     /// <param name="compilationUnit">整形済みのファイル</param>
-    /// <param name="comments">クラスの末尾に残すコメント（要手動・生成不可）</param>
     /// <returns>整形したファイル</returns>
-    private static CompilationUnitSyntax Format(CompilationUnitSyntax compilationUnit, IReadOnlyList<string> comments)
+    private static CompilationUnitSyntax Format(CompilationUnitSyntax compilationUnit)
     {
         // NormalizeWhitespace は null! を「null !」と出力するため、演算子の前の空白を取り除く
         compilationUnit = compilationUnit.ReplaceNodes(
@@ -167,16 +153,8 @@ public static class TestClassGenerator
         var members = testClass.Members.Select((m, i) => i == 0 || EndsWithBlankLine(testClass.Members[i - 1])
             ? m
             : m.WithLeadingTrivia(m.GetLeadingTrivia().Insert(0, CarriageReturnLineFeed)));
-        var commentTrivia = new List<SyntaxTrivia>();
-        if (0 < testClass.Members.Count && 0 < comments.Count) commentTrivia.Add(CarriageReturnLineFeed);
-        foreach (var comment in comments)
-        {
-            commentTrivia.AddRange([Whitespace(Indent), Comment(comment), CarriageReturnLineFeed]);
-        }
-
         var formattedClass = testClass
-            .WithMembers(List(members))
-            .WithCloseBraceToken(testClass.CloseBraceToken.WithLeadingTrivia(commentTrivia));
+            .WithMembers(List(members));
 
         // file-scoped namespace の宣言とクラスの間に空行を入れる
         if (testClass.Parent is FileScopedNamespaceDeclarationSyntax)
