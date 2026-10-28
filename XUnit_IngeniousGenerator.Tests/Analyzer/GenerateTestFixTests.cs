@@ -162,10 +162,10 @@ public class GenerateTestFixTests
     }
 
     /// <summary>
-    /// TEST002 には Ignore だけが出て、関数の直前に「// Ignore TEST002」が挿入されることを確認する
+    /// TEST002 には「一覧に載せる」と Ignore が出て、Ignore では関数の直前に「// Ignore TEST002」が挿入されることを確認する
     /// </summary>
     [Fact]
-    public async Task Fix_NotGeneratable_OffersOnlyIgnoreBeforeMember()
+    public async Task Fix_NotGeneratable_OffersListAndIgnoreBeforeMember()
     {
         using var workspace = new AdhocWorkspace();
         var product = AddProductProject(workspace);
@@ -173,10 +173,40 @@ public class GenerateTestFixTests
 
         var actions = await ComputeFixesAsync(workspace, "Twice", MissingTest.NotGeneratableRule);
 
-        var action = Assert.Single(actions);
-        Assert.Equal("Ignore : 自動生成できないテストの警告を無視する（別の方法で確認済み）", action.Title);
-        var document = (await ApplyAsync(action)).Projects.Single(p => p.Name == "Product").Documents.Single();
+        Assert.Equal(
+            ["Fix : テストしていない一覧（スキップのテスト）に載せる（Product.Tests）", "Ignore : 自動生成できないテストの警告を無視する（別の方法で確認済み）"],
+            actions.Select(a => a.Title));
+        var document = (await ApplyAsync(actions[1])).Projects.Single(p => p.Name == "Product").Documents.Single();
         Assert.Contains("    // Ignore TEST002\n    public int Twice(int value)", (await document.GetTextAsync()).ToString());
+    }
+
+    /// <summary>
+    /// TEST002 の「一覧に載せる」で、既存のテストファイルに理由つきのスキップのテスト（関数名_NotTested）が追加されることを確認する
+    /// </summary>
+    [Fact]
+    public async Task Fix_NotGeneratable_AddsSkippedTestToList()
+    {
+        const string loaderSource = """
+            using System.IO;
+            namespace Product.Domain;
+            public class Loader
+            {
+                public string Load(string path) => File.ReadAllText(path);
+            }
+            """;
+        using var workspace = new AdhocWorkspace();
+        var product = AddProductProject(workspace, loaderSource, "Loader.cs");
+        var tests = AddProject(workspace, "Product.Tests", [CorLib, XUnitCore], product.Id);
+        var existing = workspace.AddDocument(DocumentInfo.Create(
+            DocumentId.CreateNewId(tests.Id), "LoaderTests.cs", ["Domain"],
+            loader: TextLoader.From(TextAndVersion.Create(
+                SourceText.From("namespace Product.Tests.Domain;\n\npublic class LoaderTests\n{\n}\n"), VersionStamp.Create()))));
+
+        var actions = await ComputeFixesAsync(workspace, "Load", MissingTest.NotGeneratableRule);
+        var merged = (await (await ApplyAsync(actions[0])).GetDocument(existing.Id)!.GetTextAsync()).ToString();
+
+        Assert.Contains("[Fact(Skip = \"未テスト: 'File' は外部環境", merged);
+        Assert.Contains("public void Load_NotTested()", merged);
     }
 
     /// <summary>
@@ -191,7 +221,7 @@ public class GenerateTestFixTests
 
         var actions = await ComputeFixesAsync(workspace, "Divide", MissingTest.NotGeneratableRule);
 
-        var document = (await ApplyAsync(Assert.Single(actions))).Projects.Single(p => p.Name == "Product").Documents.Single();
+        var document = (await ApplyAsync(actions[1])).Projects.Single(p => p.Name == "Product").Documents.Single();
         Assert.Contains("    public int Divide(int dividend, int divisor)\n    {\n        // Ignore TEST002\n        if (divisor == 0)", (await document.GetTextAsync()).ToString());
     }
 

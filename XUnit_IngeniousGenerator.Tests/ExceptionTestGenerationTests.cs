@@ -197,7 +197,10 @@ public class ExceptionTestGenerationTests
                 "Stop(int): ガードより後ろにある throw 1 件は、そこに到達する入力を求められないため例外テストの対象外です",
             ],
             result.ManualItems);
-        Assert.Contains("    // 要手動: Stop(int): ガードより後ろにある throw 1 件は、そこに到達する入力を求められないため例外テストの対象外です", result.Code);
+        // 生成できなかった関数・部分は、理由つきのスキップのテストとして一覧に載せる
+        Assert.Contains(" / ガードより後ろにある throw 1 件は、そこに到達する入力を求められないため例外テストの対象外です\")]", result.Code);
+        Assert.Contains("public void Stop_NotTested()", result.Code);
+        Assert.Contains("public void Run_NotTested()", result.Code);
     }
 
     [Fact]
@@ -243,7 +246,8 @@ public class ExceptionTestGenerationTests
 
         Assert.Contains("_sut.Print((string)null!)", result.Code);
         Assert.Contains("_sut.Print((object)null!)", result.Code);
-        Assert.Equal(["Print_TextIsNull_ThrowsArgumentNullException", "Print_ValueIsNull_ThrowsArgumentNullException"], OnlyExceptionTests(passed));
+        // オーバーロードは、テスト名に引数の型を付けて区別する（テストの有無も関数ごとに判定できる）
+        Assert.Equal(["Print_String_TextIsNull_ThrowsArgumentNullException", "Print_Object_ValueIsNull_ThrowsArgumentNullException"], OnlyExceptionTests(passed));
     }
 
     private static async Task<IReadOnlyList<string>> GenerateAndRunAsync(string source, string metadataName)

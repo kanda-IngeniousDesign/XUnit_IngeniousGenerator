@@ -17,7 +17,8 @@ public sealed class TestProjectScaffolderTests : IDisposable
     }
 
     /// <summary>
-    /// 修飾子のないクラス（internal）と internal の列挙型も、パッケージの targets（InternalsVisibleTo）を読み込んだプロダクトでテストできる
+    /// パッケージの targets を読み込んだプロダクトで、テストプロジェクトを作成し、生成したテストが成功し、
+    /// 自動生成できない関数がスキップのテスト（テストしていない一覧）として数えられることを確かめる
     /// </summary>
     [Fact]
     public async Task Create_NewTestProject_AddsToSolutionAndGeneratedTestsPass()
@@ -25,11 +26,9 @@ public sealed class TestProjectScaffolderTests : IDisposable
         const string calculator = """
             namespace Product.Domain;
 
-            internal enum Rank { Low, High }
-
-            class Calculator
+            public class Calculator
             {
-                public void Apply(int amount, Rank rank) { }
+                public string Title => "calc".ToUpperInvariant();
 
                 public int Divide(int dividend, int divisor)
                 {
@@ -43,7 +42,7 @@ public sealed class TestProjectScaffolderTests : IDisposable
         var productDirectory = Path.Combine(_root, "Product");
         Directory.CreateDirectory(Path.Combine(productDirectory, "Domain"));
         var productProject = Path.Combine(productDirectory, "Product.csproj");
-        // パッケージを入れたときと同じく、targets を読み込む（InternalsVisibleTo がテストプロジェクトに internal を公開する）
+        // パッケージを入れたときと同じく、targets を読み込む（ビルドを壊さないことも確かめる）
         var targets = Path.Combine(AppContext.BaseDirectory, "XUnit_IngeniousGenerator.targets");
         await File.WriteAllTextAsync(productProject, $"""
             <Project Sdk="Microsoft.NET.Sdk">
@@ -90,6 +89,7 @@ public sealed class TestProjectScaffolderTests : IDisposable
         var (exitCode, output) = await RunAsync("dotnet", $"test \"{solution}\" --nologo --no-restore");
         Assert.True(exitCode == 0, output);
         Assert.Contains("Passed!", output);
+        Assert.Matches(@"Skipped:\s+1\b", output);
     }
 
     /// <summary>

@@ -31,11 +31,11 @@ public static class TestDocumentWriter
     /// <param name="targetType">テスト対象のクラス</param>
     /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="testProjectId">追加先のテストプロジェクト</param>
-    /// <param name="onlyMember">このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</param>
+    /// <param name="onlyMember">この関数・プロパティのテストだけを生成する（null ならクラス全体）</param>
     /// <param name="cancellationToken">キャンセルトークン</param>
     /// <returns>変更後のソリューション（追加するものがなければ元のまま）</returns>
     public static async Task<Solution> AddOrMergeTestDocumentAsync(
-        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, ProjectId testProjectId, IMethodSymbol? onlyMember, CancellationToken cancellationToken)
+        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, ProjectId testProjectId, ISymbol? onlyMember, CancellationToken cancellationToken)
     {
         var solution = targetDocument.Project.Solution;
         var testProject = solution.GetProject(testProjectId);
@@ -71,10 +71,10 @@ public static class TestDocumentWriter
     /// <param name="targetType">テスト対象のクラス</param>
     /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
     /// <param name="testProjectName">テストプロジェクト名（既定の名前空間にもなる）</param>
-    /// <param name="onlyMember">このメソッド・コンストラクタのテストだけを生成する（null ならクラス全体）</param>
+    /// <param name="onlyMember">この関数・プロパティのテストだけを生成する（null ならクラス全体）</param>
     /// <returns>テストプロジェクト内の相対パスと、テストファイルの内容</returns>
     public static (string RelativePath, string Code) GenerateForNewProject(
-        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, string testProjectName, IMethodSymbol? onlyMember = null)
+        Document targetDocument, INamedTypeSymbol targetType, Compilation compilation, string testProjectName, ISymbol? onlyMember = null)
     {
         var folders = targetDocument.Folders;
         var testNamespace = string.Join(".", new[] { testProjectName }.Concat(folders).Where(s => 0 < s.Length));

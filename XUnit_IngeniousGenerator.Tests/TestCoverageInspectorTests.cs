@@ -53,6 +53,44 @@ public class TestCoverageInspectorTests
         Assert.Equal(CoverageStatus.Generatable, statuses["Add"].Status);
     }
 
+    /// <summary>
+    /// オーバーロードは引数の型を含むテスト名で関数ごとに判定し、入れ子のクラスの関数も一覧の対象にすることを確認する
+    /// </summary>
+    [Fact]
+    public void Inspect_OverloadsAndNestedClass_JudgedPerMember()
+    {
+        const string source = """
+            namespace Sample;
+            public class Pricing
+            {
+                public int Add(int a) => a + 1;
+                public decimal Add(decimal a) => a + 1m;
+
+                public class Rule
+                {
+                    public int Apply(int a) => a * 2;
+                }
+            }
+            """;
+        const string testFile = """
+            public class PricingTests
+            {
+                [Fact] public void Add_Int_BoundaryValues_ReturnsExpected() { }
+            }
+            """;
+
+        var compilation = TargetCompiler.Compile(source);
+        var type = compilation.GetTypeByMetadataName("Sample.Pricing")!;
+        var coverages = TestCoverageInspector.Inspect(
+            type, compilation, new GenerationOptions(useMoq: true, useVerify: true), TestCoverageInspector.CollectTestNames(testFile, "PricingTests"));
+
+        Assert.Equal(CoverageStatus.Covered, coverages.Single(c => c.Member.Name == "Add" && c.Member.Parameters[0].Type.Name == "Int32").Status);
+        Assert.Equal(CoverageStatus.Generatable, coverages.Single(c => c.Member.Name == "Add" && c.Member.Parameters[0].Type.Name == "Decimal").Status);
+        var apply = coverages.Single(c => c.Member.Name == "Apply");
+        Assert.Equal(CoverageStatus.NotGeneratable, apply.Status);
+        Assert.Equal(["入れ子のクラスは自動生成の対象外です"], apply.Reasons);
+    }
+
     [Fact]
     public void FromProjectFile_DetectsMoqAndVerify()
     {

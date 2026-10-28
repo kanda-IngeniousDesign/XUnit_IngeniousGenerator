@@ -21,10 +21,10 @@ public sealed class CreateTestProjectCodeAction : CodeAction
     private readonly Compilation _compilation;
     private readonly string _testProjectDirectory;
     private readonly bool _useFileEdits;
-    private readonly IMethodSymbol? _onlyMember;
+    private readonly ISymbol? _onlyMember;
 
     public CreateTestProjectCodeAction(
-        Document document, INamedTypeSymbol targetType, Compilation compilation, string testProjectDirectory, bool useFileEdits, IMethodSymbol? onlyMember = null)
+        Document document, INamedTypeSymbol targetType, Compilation compilation, string testProjectDirectory, bool useFileEdits, ISymbol? onlyMember = null)
     {
         _document = document;
         _targetType = targetType;

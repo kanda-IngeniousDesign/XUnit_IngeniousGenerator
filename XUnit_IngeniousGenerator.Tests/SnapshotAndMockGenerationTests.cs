@@ -179,7 +179,10 @@ public sealed class SnapshotAndMockGenerationTests : IDisposable
                 "Load(string): 'File' は外部環境（ファイル・DB・通信など）に依存するため、単体テストでは担保しません（UIオーケストレーター側で確認）",
             ],
             result.NotGeneratableItems);
-        Assert.Contains("    // 生成不可: Load(string):", result.Code);
+        // 生成できなかったもの・部分は、理由つきのスキップのテストとして一覧に載せる
+        Assert.Contains("[Fact(Skip = \"未テスト: 'File' は外部環境", result.Code);
+        Assert.Contains("public void Load_NotTested()", result.Code);
+        Assert.Contains("public void Stamp_NotTested()", result.Code);
     }
 
     [Fact]

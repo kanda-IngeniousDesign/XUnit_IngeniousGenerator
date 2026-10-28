@@ -78,7 +78,8 @@ internal static class TargetCompiler
         var failures = new List<string>();
         var tests = assembly.GetTypes()
             .SelectMany(t => t.GetMethods())
-            .Where(m => m.GetCustomAttributes<FactAttribute>().Any());
+            // スキップのテスト（テストしていない一覧）は、xUnit と同じく実行しない
+            .Where(m => m.GetCustomAttributes<FactAttribute>().Any(f => f.Skip is null));
 
         foreach (var test in tests)
         {

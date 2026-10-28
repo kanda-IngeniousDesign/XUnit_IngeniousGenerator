@@ -13,7 +13,7 @@ namespace XUnit_IngeniousGenerator;
 // もう一方は「// Ignore TEST001」「// Ignore TEST002」を挿入する抑制専用のFix。
 // ・TEST001（クラス名）: クラス全体のテストを生成する（テストプロジェクトがなければ作成する）
 // ・TEST001（関数名）  : その関数のテストだけを既存のテストファイルに追加する
-// ・TEST002（関数名）  : 自動では生成できないため、Ignore だけを出す
+// ・TEST002（関数名）  : 自動では生成できないため、テストしていない一覧（スキップのテスト）に載せるか、Ignore を出す
 [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(MissingTestFix)), Shared]
 public class MissingTestFix : CodeFixProvider
 {
@@ -33,12 +33,16 @@ public class MissingTestFix : CodeFixProvider
             MethodDeclarationSyntax method => method,
             ConstructorDeclarationSyntax constructor => constructor,
             PropertyDeclarationSyntax property => property,
+            IndexerDeclarationSyntax indexer => indexer,
+            OperatorDeclarationSyntax op => op,
+            ConversionOperatorDeclarationSyntax conversion => conversion,
             _ => null,
         };
         if (declaration is null) return;
 
         if (diagnostic.Id == MissingTest.NotGeneratableDiagnosticId)
         {
+            await RegisterGenerateAsync(context, declaration).ConfigureAwait(false);
             RegisterIgnore(context, declaration, MissingTest.NotGeneratableDiagnosticId, "Ignore : 自動生成できないテストの警告を無視する（別の方法で確認済み）");
             return;
         }
@@ -58,10 +62,11 @@ public class MissingTestFix : CodeFixProvider
         var semanticModel = await document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
         if (semanticModel is null) return;
 
-        var classDecl = declaration is ClassDeclarationSyntax self ? self : declaration.Parent as ClassDeclarationSyntax;
+        // 入れ子のクラスの関数は、一番外側のクラスのテストファイルで扱う
+        var classDecl = declaration.AncestorsAndSelf().OfType<ClassDeclarationSyntax>().LastOrDefault();
         if (classDecl is null || semanticModel.GetDeclaredSymbol(classDecl, context.CancellationToken) is not INamedTypeSymbol targetType) return;
 
-        IMethodSymbol? onlyMember = null;
+        ISymbol? onlyMember = null;
         if (declaration is not ClassDeclarationSyntax)
         {
             onlyMember = MissingTest.GetMemberSymbol(semanticModel, declaration, context.CancellationToken);
@@ -82,12 +87,25 @@ public class MissingTestFix : CodeFixProvider
             var testProjectId = testProject.Id;
             context.RegisterCodeFix(
                 CodeAction.Create(
-                    title: onlyMember is null ? $"Fix : テストコードを生成する（{testProject.Name}）" : $"Fix : この関数のテストコードを追加する（{testProject.Name}）",
+                    title: GetGenerateTitle(diagnostic.Id, onlyMember, testProject.Name),
                     createChangedSolution: c => TestDocumentWriter.AddOrMergeTestDocumentAsync(
                         document, targetType, semanticModel.Compilation, testProjectId, onlyMember, c),
-                    equivalenceKey: $"GenerateTest:{testProject.Name}"),
+                    equivalenceKey: $"GenerateTest:{diagnostic.Id}:{testProject.Name}"),
                 diagnostic);
         }
+    }
+
+    /// <summary>
+    /// テストファイルに書き込む Fix のタイトルを返す
+    /// </summary>
+    /// <param name="diagnosticId">ルールID</param>
+    /// <param name="onlyMember">対象の関数・プロパティ（クラス全体なら null）</param>
+    /// <param name="testProjectName">テストプロジェクト名</param>
+    /// <returns>タイトル</returns>
+    private static string GetGenerateTitle(string diagnosticId, ISymbol? onlyMember, string testProjectName)
+    {
+        if (diagnosticId == MissingTest.NotGeneratableDiagnosticId) return $"Fix : テストしていない一覧（スキップのテスト）に載せる（{testProjectName}）";
+        return onlyMember is null ? $"Fix : テストコードを生成する（{testProjectName}）" : $"Fix : この関数のテストコードを追加する（{testProjectName}）";
     }
 
     /// <summary>

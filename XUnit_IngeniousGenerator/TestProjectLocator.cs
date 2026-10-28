@@ -13,10 +13,10 @@ internal static class TestProjectLocator
     /// <param name="document">対象のドキュメント</param>
     /// <param name="targetType">テスト対象のクラス</param>
     /// <param name="compilation">コンパイル</param>
-    /// <param name="onlyMember">この関数だけを生成する場合の関数</param>
+    /// <param name="onlyMember">この関数・プロパティのテストだけを生成する（null ならクラス全体）</param>
     /// <returns>アクション（作れない場合はnull）</returns>
     public static CodeAction? TryCreateAction(
-        Document document, INamedTypeSymbol targetType, Compilation compilation, IMethodSymbol? onlyMember = null)
+        Document document, INamedTypeSymbol targetType, Compilation compilation, ISymbol? onlyMember = null)
     {
         var directory = GetTestProjectDirectory(document.Project);
         if (directory is null || !TestProjectScaffolder.CanCreate(directory)) return null;

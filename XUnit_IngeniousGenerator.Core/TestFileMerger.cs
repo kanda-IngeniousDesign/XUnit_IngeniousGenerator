@@ -15,7 +15,8 @@ public static class TestFileMerger
     private const string GeneratedMemberIndent = "    ";
 
     /// <summary>
-    /// 既存のテストファイルに、生成したテストクラスのうち不足しているメンバーを追加する
+    /// 既存のテストファイルに、生成したテストクラスのうち不足しているメンバーを追加する。
+    /// 本物のテストを追加した関数は、テストしていない一覧（スキップのテスト「関数名_NotTested」）から外す
     /// </summary>
     /// <param name="existingCode">既存のテストファイルの内容</param>
     /// <param name="generatedCode">新たに生成したテストファイルの内容</param>
@@ -38,12 +39,39 @@ public static class TestFileMerger
         if (newMembers.Count == 0) return null;
 
         var endOfLine = DetectEndOfLine(existingRoot);
+        var mergedRoot = existingRoot.ReplaceNode(existingClass, AddMembers(existingClass, newMembers, endOfLine));
+        return AddMissingUsings(mergedRoot, generatedRoot, endOfLine).ToFullString();
+    }
+
+    /// <summary>
+    /// 既存のテストクラスにメンバーを追加し、本物のテストで置き換わるスキップのテストを取り除く
+    /// </summary>
+    /// <param name="existingClass">既存のテストクラス</param>
+    /// <param name="newMembers">追加するメンバー</param>
+    /// <param name="endOfLine">既存ファイルの改行コード</param>
+    /// <returns>マージ後のテストクラス</returns>
+    private static ClassDeclarationSyntax AddMembers(ClassDeclarationSyntax existingClass, IReadOnlyList<MemberDeclarationSyntax> newMembers, string endOfLine)
+    {
         var memberIndent = DetectMemberIndent(existingClass);
         var adjusted = newMembers.Select(m => AdjustTrivia(m, endOfLine, memberIndent));
 
-        var mergedClass = existingClass.WithMembers(existingClass.Members.AddRange(adjusted));
-        var mergedRoot = existingRoot.ReplaceNode(existingClass, mergedClass);
-        return AddMissingUsings(mergedRoot, generatedRoot, endOfLine).ToFullString();
+        var addedNames = newMembers.Select(GetMemberName).OfType<string>().ToList();
+        var kept = existingClass.Members.Where(m => !IsSupersededNotTested(GetMemberName(m), addedNames));
+        return existingClass.WithMembers(List(kept.Concat(adjusted)));
+    }
+
+    /// <summary>
+    /// スキップのテスト（関数名_NotTested）が、追加する本物のテスト（関数名_条件_結果）で置き換わるかを判定する
+    /// </summary>
+    /// <param name="name">既存のメンバー名</param>
+    /// <param name="addedNames">追加するメンバー名</param>
+    /// <returns>置き換わるならtrue</returns>
+    private static bool IsSupersededNotTested(string? name, IReadOnlyList<string> addedNames)
+    {
+        if (name is null || !name.EndsWith(TestTargets.NotTestedSuffix, StringComparison.Ordinal)) return false;
+
+        var prefix = name.Substring(0, name.Length - TestTargets.NotTestedSuffix.Length) + "_";
+        return addedNames.Any(n => n.StartsWith(prefix, StringComparison.Ordinal) && !n.EndsWith(TestTargets.NotTestedSuffix, StringComparison.Ordinal));
     }
 
     /// <summary>
