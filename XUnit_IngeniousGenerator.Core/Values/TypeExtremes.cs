@@ -26,7 +26,7 @@ public static class TypeExtremes
             SpecialType.System_Double => [double.MinValue, double.MaxValue],
             SpecialType.System_Decimal => [decimal.MinValue, decimal.MaxValue],
             SpecialType.System_String => [null],
-            _ => [],
+            _ => TemporalValues.Extremes(TemporalValues.KindOf(parameter.Type)),
         };
     }
 
@@ -51,7 +51,7 @@ public static class TypeExtremes
     public static string? Describe(object? value)
     {
         var member = Classify(value).Member;
-        return member is null ? null : "Is" + member;
+        return member is null ? TemporalValues.DescribeExtreme(value) : "Is" + member;
     }
 
     /// <summary>

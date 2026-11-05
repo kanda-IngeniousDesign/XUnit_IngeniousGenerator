@@ -81,7 +81,8 @@ internal static class TypeExtremeTestPlanner
 
     /// <summary>
     /// 引数のチェック（throw 文・ThrowIf～・ArgumentException の系統）ではなく、実行時に起きる例外かを判定する。
-    /// 引数のチェックによる例外は、ガードの例外テストで確かめているため、ここでは作らない
+    /// 引数のチェックによる例外は、ガードの例外テストで確かめているため、ここでは作らない。
+    /// ただし、日付・時刻の型の計算（DateTime.MaxValue.AddDays(1) など）で .NET が出す例外は、実行時の例外として扱う
     /// </summary>
     /// <param name="result">評価の結果</param>
     /// <param name="compilation">コンパイル</param>
@@ -90,6 +91,7 @@ internal static class TypeExtremeTestPlanner
     {
         if (result.Kind != EvaluationKind.Threw || result.ExceptionType is null) return false;
         if (result.ThrowSite is ThrowStatementSyntax or ThrowExpressionSyntax) return false;
+        if (IsTemporalOperation(result.ThrowSite, compilation)) return true;
 
         var argumentException = compilation.GetTypeByMetadataName("System.ArgumentException");
         for (var type = result.ExceptionType; type is not null; type = type.BaseType)
@@ -98,5 +100,19 @@ internal static class TypeExtremeTestPlanner
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// 例外が起きた構文が、日付・時刻の型のメソッド呼び出し・生成かを判定する
+    /// </summary>
+    /// <param name="site">例外が起きた構文</param>
+    /// <param name="compilation">コンパイル</param>
+    /// <returns>日付・時刻の型の操作ならtrue</returns>
+    private static bool IsTemporalOperation(SyntaxNode? site, Compilation compilation)
+    {
+        if (site is not (InvocationExpressionSyntax or BaseObjectCreationExpressionSyntax)) return false;
+
+        var symbol = compilation.GetSemanticModel(site.SyntaxTree).GetSymbolInfo(site).Symbol;
+        return TemporalValues.KindOf(symbol?.ContainingType) != TemporalKind.None;
     }
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using XUnit_IngeniousGenerator.Core.Values;
 
 namespace XUnit_IngeniousGenerator.Core.Evaluation;
 
@@ -24,6 +25,11 @@ internal static class ClrOperations
             return target.IsReferenceType ? null : throw new UnsupportedSyntaxException($"null から '{target}' への変換");
         }
 
+        if (TemporalValues.KindOf(target) != TemporalKind.None && TemporalValues.IsTemporal(value)) return value;
+
+        // 列挙型の値（date.DayOfWeek など）は、元になる整数のまま扱う
+        if (target.TypeKind == TypeKind.Enum && value is int) return value;
+
         return target.SpecialType switch
         {
             SpecialType.System_Int32 => ToInt32(value),
@@ -45,6 +51,9 @@ internal static class ClrOperations
     /// <returns>演算結果</returns>
     public static object? Binary(SyntaxKind kind, ITypeSymbol operandType, object? left, object? right)
     {
+        if (TemporalValues.KindOf(operandType) != TemporalKind.None) return TemporalMethods.Binary(kind, left, right);
+        if (operandType.TypeKind == TypeKind.Enum && left is int leftNumber && right is int rightNumber) return Int32Binary(kind, leftNumber, rightNumber);
+
         return operandType.SpecialType switch
         {
             SpecialType.System_Int32 => Int32Binary(kind, (int)left!, (int)right!),
@@ -75,6 +84,7 @@ internal static class ClrOperations
             (SyntaxKind.UnaryMinusExpression, long l) => unchecked(-l),
             (SyntaxKind.UnaryMinusExpression, double d) => -d,
             (SyntaxKind.UnaryMinusExpression, decimal m) => -m,
+            (SyntaxKind.UnaryMinusExpression, TimeSpan t) => -t,
             _ => throw new UnsupportedSyntaxException($"単項演算 '{kind}'"),
         };
     }
@@ -100,6 +110,7 @@ internal static class ClrOperations
     {
         if (value is null || constant is null) return value is null && constant is null;
         if (IsNumber(value) && IsNumber(constant)) return CompareNumbers(value, constant) == 0;
+        if (TemporalValues.IsTemporal(value)) return value.Equals(constant);
         return value is string or bool or char
             ? value.Equals(constant)
             : throw new UnsupportedSyntaxException($"'{value.GetType().Name}' の比較");

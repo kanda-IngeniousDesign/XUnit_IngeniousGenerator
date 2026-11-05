@@ -57,8 +57,20 @@ public sealed class ValueRenderer
         {
             EnumMemberValue member => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, RenderType(member.Type), IdentifierName(member.Name)),
             CollectionValue collection => RenderCollection(collection),
+            _ when TemporalValues.IsTemporal(value) => RenderTemporal(value!),
             _ => RenderClrValue(value),
         };
+    }
+
+    /// <summary>
+    /// 日付・時刻の値を式にする（型名を書くため System を using に加える）
+    /// </summary>
+    /// <param name="value">日付・時刻の値</param>
+    /// <returns>式の構文</returns>
+    private ExpressionSyntax RenderTemporal(object value)
+    {
+        AddNamespace("System");
+        return TemporalValues.Render(value);
     }
 
     /// <summary>

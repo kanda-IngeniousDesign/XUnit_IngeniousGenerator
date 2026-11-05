@@ -22,6 +22,8 @@ internal static class KnownMethods
             throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'");
         }
 
+        if (TemporalMethods.TryInvoke(invocation, method, evaluate, out var temporal)) return temporal;
+
         if (!method.IsStatic)
         {
             if (method.ContainingType.SpecialType != SpecialType.System_String || invocation.Expression is not MemberAccessExpressionSyntax receiver)
@@ -62,6 +64,8 @@ internal static class KnownMethods
     /// <returns>プロパティの値</returns>
     public static object? ReadMember(MemberAccessExpressionSyntax memberAccess, SemanticModel model, Func<ExpressionSyntax, object?> evaluate)
     {
+        if (TemporalMethods.TryReadMember(memberAccess, model.GetSymbolInfo(memberAccess).Symbol, evaluate, out var temporal)) return temporal;
+
         if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol { Name: "Length", ContainingType.SpecialType: SpecialType.System_String })
         {
             // null の Length は実行時に NullReferenceException になる

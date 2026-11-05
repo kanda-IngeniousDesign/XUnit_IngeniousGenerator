@@ -76,7 +76,9 @@ internal static class BoundaryInputGenerator
             var left = ConditionParser.GetParameter(binary.Left, model, member);
             var right = ConditionParser.GetParameter(binary.Right, model, member);
             if (left is null || right is null || SymbolEqualityComparer.Default.Equals(left, right)) continue;
-            if (!ConditionParser.IsNumeric(left.Type) || !ConditionParser.IsNumeric(right.Type)) continue;
+            var bothNumeric = ConditionParser.IsNumeric(left.Type) && ConditionParser.IsNumeric(right.Type);
+            var sameTemporal = TemporalValues.KindOf(left.Type) != TemporalKind.None && TemporalValues.KindOf(left.Type) == TemporalValues.KindOf(right.Type);
+            if (!bothNumeric && !sameTemporal) continue;
 
             relations.Add((left, right));
         }
@@ -112,6 +114,14 @@ internal static class BoundaryInputGenerator
             var fixedValue = FindFixedValue(parameter.Type, conditions, allowMocks, construct);
             if (fixedValue is null) return false;
             builder.FixedValues[parameter] = fixedValue;
+            return true;
+        }
+
+        // 日付・時刻は、基準の日付と、比べている日付の前後（または代表の日付）を使う
+        var temporal = TemporalValues.KindOf(parameter.Type);
+        if (temporal != TemporalKind.None)
+        {
+            builder.AddData(parameter, TemporalValues.BaseValue(temporal), TemporalValues.Variations(temporal, constants));
             return true;
         }
 
@@ -178,7 +188,20 @@ internal static class BoundaryInputGenerator
         {
             var targetIndex = DataParameters.FindIndex(p => SymbolEqualityComparer.Default.Equals(p, target));
             var otherIndex = DataParameters.FindIndex(p => SymbolEqualityComparer.Default.Equals(p, other));
-            if (targetIndex < 0 || otherIndex < 0 || !ClrOperationsBridge.TryToDecimal(BaseRow[otherIndex], out var pivot)) return;
+            if (targetIndex < 0 || otherIndex < 0) return;
+
+            // 日付・時刻は、相手の基準の値の前後（±1日・±1秒）にする
+            if (TemporalValues.IsTemporal(BaseRow[otherIndex]))
+            {
+                foreach (var around in TemporalValues.Around(BaseRow[otherIndex]!).Where(v => !Variations[targetIndex].Contains(v)))
+                {
+                    Variations[targetIndex].Add(around);
+                }
+
+                return;
+            }
+
+            if (!ClrOperationsBridge.TryToDecimal(BaseRow[otherIndex], out var pivot)) return;
 
             foreach (var candidate in new[] { pivot - 1, pivot, pivot + 1 }.Select(TestValue.FromNumber))
             {
@@ -379,6 +402,8 @@ internal static class BoundaryInputGenerator
         calleeResults[member] = result;
         foreach (var node in declaration.DescendantNodes())
         {
+            if (node is BinaryExpressionSyntax comparison && IsComparison(comparison) && TryAddTemporalConstant(result, comparison, model, member)) continue;
+
             var (subject, constantExpression) = node switch
             {
                 BinaryExpressionSyntax binary when IsComparison(binary) => SplitComparison(binary, model),
@@ -391,13 +416,63 @@ internal static class BoundaryInputGenerator
 
             var parameter = ConditionParser.GetParameter(subject, model, member);
             var constant = model.GetConstantValue(constantExpression);
-            if (parameter is null || !constant.HasValue || constant.Value is null) continue;
+            if (!constant.HasValue || constant.Value is null) continue;
+            if (parameter is null)
+            {
+                AddTemporalPropertyConstants(result, subject, constant.Value, model, member);
+                continue;
+            }
 
             AddConstant(result, parameter, constant.Value);
         }
 
         if (depth < SameClassCall.MaxDepth) AddCalleeConstants(result, declaration, model, member, calleeResults, depth);
         return result;
+    }
+
+    /// <summary>
+    /// 日付・時刻の引数のプロパティ（date.Month など）と定数を比べていれば、その前後になる日付・時刻を引数の定数に加える
+    /// </summary>
+    /// <param name="result">引数ごとの定数（追加先）</param>
+    /// <param name="subject">比べている式</param>
+    /// <param name="constant">定数</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド</param>
+    private static void AddTemporalPropertyConstants(
+        Dictionary<IParameterSymbol, List<object>> result, ExpressionSyntax subject, object constant, SemanticModel model, IMethodSymbol member)
+    {
+        if (subject is not MemberAccessExpressionSyntax memberAccess || constant is not (int or long)) return;
+
+        var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member);
+        var kind = TemporalValues.KindOf(parameter?.Type);
+        if (parameter is null || kind == TemporalKind.None) return;
+
+        var number = System.Convert.ToInt64(constant, System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var value in TemporalValues.FromProperty(kind, memberAccess.Name.Identifier.ValueText, number)) AddConstant(result, parameter, value);
+    }
+
+    /// <summary>
+    /// 引数と、本体に書いた日付・時刻（new DateTime(2026, 6, 1) など）を比べていれば、その値を引数の定数に加える
+    /// </summary>
+    /// <param name="result">引数ごとの定数（追加先）</param>
+    /// <param name="comparison">比較演算の式</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド</param>
+    /// <returns>加えたらtrue</returns>
+    private static bool TryAddTemporalConstant(
+        Dictionary<IParameterSymbol, List<object>> result, BinaryExpressionSyntax comparison, SemanticModel model, IMethodSymbol member)
+    {
+        foreach (var (subject, other) in new[] { (comparison.Left, comparison.Right), (comparison.Right, comparison.Left) })
+        {
+            var parameter = ConditionParser.GetParameter(subject, model, member);
+            if (parameter is null || TemporalValues.KindOf(parameter.Type) == TemporalKind.None) continue;
+            if (!TemporalValues.TryGetConstant(other, model, out var value)) continue;
+
+            AddConstant(result, parameter, value);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
