@@ -55,7 +55,8 @@ public class RelationalGuardGenerationTests
         var result = TargetCompiler.Generate(source, "Sample.Limits");
         var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
 
-        // テスト対象は、コンストラクタのガードを静的な評価で通過する引数で作る
+        // テスト対象は、コンストラクタのガードを静的な評価で通過する引数で作る。
+        // 「||」でつながった条件は、条件ごとにテストにする（value < min の 0 と、max < value の 2）
         Assert.Contains("private readonly Limits _sut = new Limits(1, 1);", result.Code);
         Assert.Contains("Assert.Throws<ArgumentException>(() => new Limits(2, 1));", result.Code);
         Assert.Contains("Assert.Equal(\"from\", exception.ParamName);", result.Code);
@@ -65,6 +66,7 @@ public class RelationalGuardGenerationTests
             [
                 "Constructor_MinIs2_ThrowsArgumentException",
                 "Clamp_ValueIsZero_ThrowsArgumentOutOfRangeException",
+                "Clamp_ValueIs2_ThrowsArgumentOutOfRangeException",
                 "Clamp_MinIs2_ThrowsArgumentException",
                 "Clamp_BoundaryValues_ReturnsExpected",
                 "Span_FromIsMinus1_ThrowsArgumentOutOfRangeException",

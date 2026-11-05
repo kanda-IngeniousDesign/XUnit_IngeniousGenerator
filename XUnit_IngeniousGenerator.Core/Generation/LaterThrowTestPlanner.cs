@@ -127,7 +127,8 @@ internal sealed class LaterThrowTestPlanner
     }
 
     /// <summary>
-    /// 境界値の入力を順に評価し、まだテストのない throw に到達した入力を例外テストにする
+    /// 境界値の入力を順に評価し、まだテストのない throw に到達した入力を例外テストにする。
+    /// 「||」でつながった if の条件は、条件ごとに例外になる入力を探す（value &lt; min || max &lt; value なら、小さい側と大きい側の両方）
     /// </summary>
     /// <param name="member">メソッド</param>
     /// <param name="declaration">メソッドの宣言</param>
@@ -140,18 +141,68 @@ internal sealed class LaterThrowTestPlanner
         IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, BoundaryInputs inputs, HashSet<SyntaxNode> sites, HashSet<SyntaxNode> covered)
     {
         var baseRow = inputs.Rows[0];
+        var coveredConditions = new HashSet<(SyntaxNode Site, int Condition)>();
+        var testNames = new HashSet<string>();
         foreach (var row in inputs.Rows)
         {
             // 評価できない入力があっても、ほかの入力では throw に到達する場合がある（コンストラクタのフィールドへの代入など）
             var result = MethodInterpreter.Evaluate(declaration, model, member, row);
             if (result.Kind == EvaluationKind.Unsupported) continue;
             if (result.Kind != EvaluationKind.Threw || result.ExceptionType is null || result.ThrowSite is null) continue;
-            if (!sites.Contains(result.ThrowSite) || !covered.Add(result.ThrowSite)) continue;
+            if (!sites.Contains(result.ThrowSite)) continue;
+
+            // この入力で成り立つ条件のうち、まだテストのない条件があればテストにする
+            var conditions = GetHoldingConditions(result.ThrowSite, declaration, model, member, row);
+            if (!conditions.Any(c => !coveredConditions.Contains((result.ThrowSite, c)))) continue;
 
             var condition = DescribeChangedInput(member, baseRow, row);
             var testName = $"{MemberDisplay.GetTestName(member)}_{condition}_Throws{result.ExceptionType.Name}";
+            if (!testNames.Add(testName)) continue;
+
+            covered.Add(result.ThrowSite);
+            foreach (var index in conditions) coveredConditions.Add((result.ThrowSite, index));
             yield return new ComputedExceptionTestCase(member, testName, result.ExceptionType, result.ParamName, row);
         }
+    }
+
+    /// <summary>
+    /// throw を囲む if の条件が「||」でつながっていれば、入力で成り立つ条件の番号を返す（つながっていなければ、条件全体を 0 番とする）
+    /// </summary>
+    /// <param name="site">throw の構文</param>
+    /// <param name="declaration">メソッドの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド</param>
+    /// <param name="row">入力</param>
+    /// <returns>成り立つ条件の番号</returns>
+    private static List<int> GetHoldingConditions(
+        SyntaxNode site, BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, object?[] row)
+    {
+        var ifStatement = site.Parent is BlockSyntax { Statements.Count: 1 } block ? block.Parent as IfStatementSyntax : site.Parent as IfStatementSyntax;
+        if (ifStatement is null || !declaration.Contains(ifStatement)) return [0];
+
+        var parts = SplitOr(ifStatement.Condition);
+        if (parts.Count < 2) return [0];
+
+        // 条件を評価できない場合は、条件全体を 0 番として扱う（入力1つでテスト1つ）
+        var holding = parts.Select((part, index) => (index, value: MethodInterpreter.EvaluateCondition(declaration, model, member, row, part)))
+            .ToList();
+        return holding.Any(h => h.value is null) ? [0] : holding.Where(h => h.value == true).Select(h => h.index + 1).ToList();
+    }
+
+    /// <summary>
+    /// 条件を「||」で分ける（括弧の中もたどる）
+    /// </summary>
+    /// <param name="condition">条件</param>
+    /// <returns>分けた条件</returns>
+    private static List<ExpressionSyntax> SplitOr(ExpressionSyntax condition)
+    {
+        return condition switch
+        {
+            ParenthesizedExpressionSyntax parenthesized => SplitOr(parenthesized.Expression),
+            BinaryExpressionSyntax binary when binary.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.LogicalOrExpression) =>
+                [.. SplitOr(binary.Left), .. SplitOr(binary.Right)],
+            _ => [condition],
+        };
     }
 
     /// <summary>

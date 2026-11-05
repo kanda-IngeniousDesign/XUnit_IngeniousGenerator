@@ -77,6 +77,31 @@ public sealed class MethodInterpreter
     }
 
     /// <summary>
+    /// 引数だけを使う条件（ガードの条件の一部）を評価する
+    /// </summary>
+    /// <param name="declaration">メソッド・コンストラクタの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド・コンストラクタのシンボル</param>
+    /// <param name="arguments">引数の値（引数の順）</param>
+    /// <param name="condition">条件</param>
+    /// <returns>条件の値（評価できなければnull）</returns>
+    public static bool? EvaluateCondition(
+        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments, ExpressionSyntax condition)
+    {
+        var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
+        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = arguments[i];
+
+        try
+        {
+            return interpreter.EvaluateConverted(condition) as bool?;
+        }
+        catch (Exception ex) when (ex is UnsupportedSyntaxException or GuestThrowException or ArithmeticException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// 本体の先頭の文（ガード）だけを実行し、例外にならずに通過するかを判定する（コンストラクタの引数を決めるために使う）
     /// </summary>
     /// <param name="declaration">メソッド・コンストラクタの宣言</param>
