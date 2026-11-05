@@ -91,6 +91,58 @@ public class ExceptionTestGenerationTests
     }
 
     [Fact]
+    public async Task Generate_IsPatternGuards_TestsPassAgainstTarget()
+    {
+        const string source = """
+            using System;
+            namespace Sample;
+            public class Picker
+            {
+                public int Level(int value)
+                {
+                    if (value is < 0 or > 10) throw new ArgumentOutOfRangeException(nameof(value));
+                    return value;
+                }
+
+                public string Label(string name)
+                {
+                    if (name is null or "") throw new ArgumentException("name is required", nameof(name));
+                    return name;
+                }
+
+                public int Code(int code)
+                {
+                    if (code is not (>= 1 and <= 3)) throw new ArgumentOutOfRangeException(nameof(code));
+                    return code;
+                }
+
+                public int Odd(int number)
+                {
+                    if (number is 2 or 4) throw new ArgumentException("even", nameof(number));
+                    return number;
+                }
+            }
+            """;
+
+        var result = TargetCompiler.Generate(source, "Sample.Picker");
+        var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
+
+        Assert.DoesNotContain("_NotTested", result.Code);
+        Assert.Equal(
+            [
+                "Level_ValueIsMinus1_ThrowsArgumentOutOfRangeException",
+                "Level_ValueIs11_ThrowsArgumentOutOfRangeException",
+                "Label_NameIsNull_ThrowsArgumentException",
+                "Label_NameIsEmpty_ThrowsArgumentException",
+                "Code_CodeIsZero_ThrowsArgumentOutOfRangeException",
+                "Code_CodeIs4_ThrowsArgumentOutOfRangeException",
+                "Odd_NumberIs2_ThrowsArgumentException",
+                "Odd_NumberIs4_ThrowsArgumentException",
+            ],
+            OnlyExceptionTests(passed));
+    }
+
+    [Fact]
     public async Task Generate_StaticAsyncHelpers_UsesThrowsAsyncAndStaticCall()
     {
         const string source = """

@@ -89,8 +89,7 @@ internal static class ConditionParser
             ParenthesizedExpressionSyntax parenthesized => TryAdd(parenthesized.Expression, model, member, results),
             BinaryExpressionSyntax logicalOr when logicalOr.IsKind(SyntaxKind.LogicalOrExpression) =>
                 TryAdd(logicalOr.Left, model, member, results) && TryAdd(logicalOr.Right, model, member, results),
-            IsPatternExpressionSyntax { Pattern: ConstantPatternSyntax pattern } isPattern when pattern.Expression.IsKind(SyntaxKind.NullLiteralExpression) =>
-                TryAddCondition(isPattern.Expression, GuardCondition.Null, model, member, results),
+            IsPatternExpressionSyntax isPattern => TryAddPattern(isPattern.Expression, isPattern.Pattern, false, model, member, results),
             BinaryExpressionSyntax binary => TryAddComparison(binary, model, member, results),
             InvocationExpressionSyntax invocation => TryAddStringCheck(invocation, model, member, results),
             _ => false,
@@ -124,6 +123,46 @@ internal static class ConditionParser
 
         return TryGetNumericConstant(binary.Left, model, out var left)
             && TryAddNumeric(binary.Right, GuardCondition.Compare(Flip(compareOperator), left), model, member, results);
+    }
+
+    /// <summary>
+    /// 「引数 is パターン」を解析する（null、""、数値定数、&lt; などの比較、or・and・not の組み合わせ）。
+    /// 例外になる条件を「または」でつないだ形にできるものだけを対象にする（not は比較の向きを反転し、not (A and B) は not A or not B にする）
+    /// </summary>
+    /// <param name="subject">is の左辺</param>
+    /// <param name="pattern">パターン</param>
+    /// <param name="negated">not の内側ならtrue</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">ガードがあるメンバー</param>
+    /// <param name="results">解析結果の追加先</param>
+    /// <returns>解析できたらtrue</returns>
+    private static bool TryAddPattern(
+        ExpressionSyntax subject, PatternSyntax pattern, bool negated, SemanticModel model, IMethodSymbol member, List<(IParameterSymbol, GuardCondition)> results)
+    {
+        switch (pattern)
+        {
+            case ParenthesizedPatternSyntax parenthesized:
+                return TryAddPattern(subject, parenthesized.Pattern, negated, model, member, results);
+            case UnaryPatternSyntax not:
+                return TryAddPattern(subject, not.Pattern, !negated, model, member, results);
+            case BinaryPatternSyntax binary when binary.IsKind(SyntaxKind.OrPattern) != negated:
+                // A or B、または not (A and B)（= not A or not B）は、どちらかに当てはまれば例外になる
+                return TryAddPattern(subject, binary.Left, negated, model, member, results)
+                    && TryAddPattern(subject, binary.Right, negated, model, member, results);
+            case ConstantPatternSyntax constant when constant.Expression.IsKind(SyntaxKind.NullLiteralExpression):
+                return !negated && TryAddCondition(subject, GuardCondition.Null, model, member, results);
+            case ConstantPatternSyntax constant when model.GetConstantValue(constant.Expression) is { HasValue: true, Value: "" }:
+                return !negated && GetParameter(subject, model, member) is { Type.SpecialType: SpecialType.System_String }
+                    && TryAddCondition(subject, GuardCondition.Empty, model, member, results);
+            case ConstantPatternSyntax constant when TryGetNumericConstant(constant.Expression, model, out var value):
+                return TryAddNumeric(subject, GuardCondition.Compare(negated ? CompareOperator.NotEqual : CompareOperator.Equal, value), model, member, results);
+            case RelationalPatternSyntax relational when TryGetNumericConstant(relational.Expression, model, out var bound)
+                && TryGetRelationalOperator(relational.OperatorToken.Kind(), out var compareOperator):
+                return TryAddNumeric(subject, GuardCondition.Compare(negated ? Negate(compareOperator) : compareOperator, bound), model, member, results);
+            default:
+                // A and B（範囲の内側で例外になる）、not (A or B) などは、1つの比較で表せないため対象外にする
+                return false;
+        }
     }
 
     /// <summary>
@@ -213,6 +252,43 @@ internal static class ConditionParser
             _ => (CompareOperator)(-1),
         };
         return Enum.IsDefined(typeof(CompareOperator), compareOperator);
+    }
+
+    /// <summary>
+    /// 比較のパターンの記号（&lt; など）を比較演算子に変換する
+    /// </summary>
+    /// <param name="kind">記号の種類</param>
+    /// <param name="compareOperator">比較演算子</param>
+    /// <returns>比較の記号ならtrue</returns>
+    private static bool TryGetRelationalOperator(SyntaxKind kind, out CompareOperator compareOperator)
+    {
+        compareOperator = kind switch
+        {
+            SyntaxKind.LessThanToken => CompareOperator.LessThan,
+            SyntaxKind.LessThanEqualsToken => CompareOperator.LessThanOrEqual,
+            SyntaxKind.GreaterThanToken => CompareOperator.GreaterThan,
+            SyntaxKind.GreaterThanEqualsToken => CompareOperator.GreaterThanOrEqual,
+            _ => (CompareOperator)(-1),
+        };
+        return Enum.IsDefined(typeof(CompareOperator), compareOperator);
+    }
+
+    /// <summary>
+    /// 条件を反転したときの演算子を返す（not &lt; 0 ⇔ &gt;= 0）
+    /// </summary>
+    /// <param name="compareOperator">元の演算子</param>
+    /// <returns>反転した演算子</returns>
+    private static CompareOperator Negate(CompareOperator compareOperator)
+    {
+        return compareOperator switch
+        {
+            CompareOperator.Equal => CompareOperator.NotEqual,
+            CompareOperator.NotEqual => CompareOperator.Equal,
+            CompareOperator.LessThan => CompareOperator.GreaterThanOrEqual,
+            CompareOperator.LessThanOrEqual => CompareOperator.GreaterThan,
+            CompareOperator.GreaterThan => CompareOperator.LessThanOrEqual,
+            _ => CompareOperator.LessThan,
+        };
     }
 
     /// <summary>
