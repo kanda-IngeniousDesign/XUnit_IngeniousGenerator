@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+
 namespace XUnit_IngeniousGenerator.Core.Guards;
 
 /// <summary>
@@ -5,10 +7,11 @@ namespace XUnit_IngeniousGenerator.Core.Guards;
 /// </summary>
 public sealed class GuardStatement
 {
-    private GuardStatement(IReadOnlyList<GuardCase> cases, string? unrecognizedText)
+    private GuardStatement(IReadOnlyList<GuardCase> cases, string? unrecognizedText, SyntaxNode? syntax)
     {
         Cases = cases;
         UnrecognizedText = unrecognizedText;
+        Syntax = syntax;
     }
 
     /// <summary>解析できたケース（「||」でつながった条件は複数になる）</summary>
@@ -16,6 +19,9 @@ public sealed class GuardStatement
 
     /// <summary>解析できなかった場合の原文（解析できた場合はnull）</summary>
     public string? UnrecognizedText { get; }
+
+    /// <summary>解析できなかったガード文の構文（解析できた場合はnull）</summary>
+    public SyntaxNode? Syntax { get; }
 
     /// <summary>解析できたガードか</summary>
     public bool IsRecognized => UnrecognizedText is null;
@@ -27,17 +33,18 @@ public sealed class GuardStatement
     /// <returns>ガード文</returns>
     public static GuardStatement Recognized(IReadOnlyList<GuardCase> cases)
     {
-        return new GuardStatement(cases, null);
+        return new GuardStatement(cases, null, null);
     }
 
     /// <summary>
     /// 例外を投げる形だが、条件を解析できなかったガード文を作る
     /// </summary>
     /// <param name="text">ガードの原文</param>
+    /// <param name="syntax">ガード文の構文</param>
     /// <returns>ガード文</returns>
-    public static GuardStatement Unrecognized(string text)
+    public static GuardStatement Unrecognized(string text, SyntaxNode syntax)
     {
-        return new GuardStatement([], text);
+        return new GuardStatement([], text, syntax);
     }
 }
 

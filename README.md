@@ -19,7 +19,7 @@ Every member with logic in a class ends up in the test project either as tests o
 
 Generated tests:
 
-- Exception tests from argument guards (`if (...) throw`, `ThrowIf...`, `?? throw`), including `ParamName` checks. Guard conditions may use `is` patterns (`x is < 0 or > 10`, `s is null or ""`, `x is not (>= 1 and <= 3)`).
+- Exception tests from argument guards (`if (...) throw`, `ThrowIf...`, `?? throw`), including `ParamName` checks. Guard conditions may use `is` patterns (`x is < 0 or > 10`, `s is null or ""`, `x is not (>= 1 and <= 3)`). Guards that compare arguments with each other (`if (min > max) throw`, `ThrowIfGreaterThan(from, to)`) or use an argument's property (`if (date.Year < 1900) throw`, `text.Length > 3`) are evaluated statically to find an input that throws, in methods and constructors; the instance under test is created with arguments that pass such constructor guards.
 - Boundary-value tests whose expected values are computed from the code by a static interpreter, including the midpoint between boundaries and each type's extremes (`int.MinValue`, `int.MaxValue`, `null`, ...). Runtime exceptions at the extremes (for example `NullReferenceException`) are recorded as exception tests. `DateTime`, `DateOnly` and `TimeSpan` are supported: dates compared in the code (`date < new DateTime(2026, 6, 1)`) are tested one day and one second before and after, and comparisons of `date.Year`, `date.Month`, `date.DayOfWeek` and similar properties produce matching dates.
 - Snapshot tests (Verify) for values that can't be computed statically, with dependencies mocked by Moq (when the test project references Verify.Xunit and Moq).
 - No-exception checks for methods without a return value.

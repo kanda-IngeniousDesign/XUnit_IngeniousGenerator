@@ -57,7 +57,30 @@ internal static class BoundaryInputGenerator
         }
 
         failedParameter = null;
-        return new BoundaryInputs(builder.DataParameters, builder.FixedValues, CombineOneAtATime([.. builder.BaseRow], [.. builder.Variations]));
+        var rows = CombineOneAtATime([.. builder.BaseRow], [.. builder.Variations]);
+        if (avoidBodyThrows && builder.FixedValues.Count == 0) rows = RemoveThrowingRows(rows, member, declaration, model);
+        return new BoundaryInputs(builder.DataParameters, builder.FixedValues, rows);
+    }
+
+    /// <summary>
+    /// 静的な評価で例外になると分かる入力を除く（解析できないガードなど、条件として避けられない throw に到達する入力）。
+    /// すべての入力が例外になる場合は、そのまま返す
+    /// </summary>
+    /// <param name="rows">入力の一覧（すべての引数の値）</param>
+    /// <param name="member">メソッド</param>
+    /// <param name="declaration">メソッドの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <returns>例外にならない入力の一覧</returns>
+    private static List<object?[]> RemoveThrowingRows(List<object?[]> rows, IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model)
+    {
+        // throw も ThrowIf～ もない関数は評価しない（呼び出しの多い関数で、入力ごとの評価が重くなるため）
+        var bodies = SameClassCall.FindReachable(declaration, model).Select(c => (SyntaxNode)c.Declaration).Prepend(declaration);
+        var mayThrow = bodies.SelectMany(b => b.DescendantNodes()).Any(n => n is ThrowStatementSyntax or ThrowExpressionSyntax
+            || (n is InvocationExpressionSyntax invocation && invocation.Expression.ToString().Contains(".ThrowIf")));
+        if (!mayThrow) return rows;
+
+        var passing = rows.Where(r => MethodInterpreter.Evaluate(declaration, model, member, r).Kind != EvaluationKind.Threw).ToList();
+        return passing.Count == 0 ? rows : passing;
     }
 
     /// <summary>
@@ -419,7 +442,7 @@ internal static class BoundaryInputGenerator
             if (!constant.HasValue || constant.Value is null) continue;
             if (parameter is null)
             {
-                AddTemporalPropertyConstants(result, subject, constant.Value, model, member);
+                AddPropertyConstants(result, subject, constant.Value, model, member);
                 continue;
             }
 
@@ -431,23 +454,38 @@ internal static class BoundaryInputGenerator
     }
 
     /// <summary>
-    /// 日付・時刻の引数のプロパティ（date.Month など）と定数を比べていれば、その前後になる日付・時刻を引数の定数に加える
+    /// 引数のプロパティと定数を比べていれば、その前後になる値を引数の定数に加える
+    /// （日付・時刻の date.Month などは前後の日付、文字列の text.Length は前後の長さの文字列）
     /// </summary>
     /// <param name="result">引数ごとの定数（追加先）</param>
     /// <param name="subject">比べている式</param>
     /// <param name="constant">定数</param>
     /// <param name="model">セマンティックモデル</param>
     /// <param name="member">メソッド</param>
-    private static void AddTemporalPropertyConstants(
+    private static void AddPropertyConstants(
         Dictionary<IParameterSymbol, List<object>> result, ExpressionSyntax subject, object constant, SemanticModel model, IMethodSymbol member)
     {
         if (subject is not MemberAccessExpressionSyntax memberAccess || constant is not (int or long)) return;
 
         var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member);
-        var kind = TemporalValues.KindOf(parameter?.Type);
-        if (parameter is null || kind == TemporalKind.None) return;
+        if (parameter is null) return;
 
         var number = System.Convert.ToInt64(constant, System.Globalization.CultureInfo.InvariantCulture);
+        if (parameter.Type.SpecialType == SpecialType.System_String && memberAccess.Name.Identifier.ValueText == "Length")
+        {
+            // 長さが極端に大きい比較（text.Length > 10000 など）は、テストが読みにくくなるため対象外にする
+            const int MaxLength = 100;
+            foreach (var length in new[] { number - 1, number, number + 1 }.Where(n => 0 < n && n <= MaxLength))
+            {
+                AddConstant(result, parameter, new string('a', (int)length));
+            }
+
+            return;
+        }
+
+        var kind = TemporalValues.KindOf(parameter.Type);
+        if (kind == TemporalKind.None) return;
+
         foreach (var value in TemporalValues.FromProperty(kind, memberAccess.Name.Identifier.ValueText, number)) AddConstant(result, parameter, value);
     }
 

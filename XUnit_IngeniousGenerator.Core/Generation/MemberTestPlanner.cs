@@ -54,7 +54,8 @@ internal sealed class MemberTestPlanner
             return [];
         }
 
-        var tests = new List<PlannedTest>(_exceptionPlanner.Plan(member, guards.Statements, display));
+        // 解析できないガード（引数どうしの比較など）とそれ以降の throw は、ガードより後ろの throw と同じく静的な評価で入力を探す
+        var tests = new List<PlannedTest>(_exceptionPlanner.Plan(member, guards.Statements, display, reportUnrecognized: false));
         tests.AddRange(_laterThrowPlanner.Plan(member, declaration, model, guards, display));
         var returnValueTest = _returnValuePlanner.Plan(member, declaration, model, guards, display);
 

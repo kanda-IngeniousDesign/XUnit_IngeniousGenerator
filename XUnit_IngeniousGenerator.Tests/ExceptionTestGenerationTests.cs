@@ -256,7 +256,7 @@ public class ExceptionTestGenerationTests
     }
 
     [Fact]
-    public void Generate_UnrecognizedGuardBeforeOthers_StopsAtThatGuard()
+    public async Task Generate_UnrecognizedGuardBeforeOthers_FindsThrowingInputByEvaluation()
     {
         const string source = """
             using System;
@@ -273,11 +273,18 @@ public class ExceptionTestGenerationTests
             """;
 
         var result = TargetCompiler.Generate(source, "Sample.Validator");
+        var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
 
-        Assert.Equal(2, result.GeneratedTestCount);
-        Assert.Contains("Check_AIsMinus1_ThrowsArgumentOutOfRangeException", result.Code);
-        Assert.Contains("Check_BoundaryValues_DoesNotThrow", result.Code);
-        Assert.Equal(["Check(int, string): 条件 'a > 0 && b.Length > 3' を解析できないため、これ以降のガードは対象外です"], result.ManualItems);
+        // 解析できないガードは、b.Length と比べている定数から作った長さの文字列で到達する入力を探す。
+        // その後ろの ThrowIfNull(b) は、b が null 非許容のため null を渡す入力がなく、テストしていない一覧に載る
+        Assert.Equal(
+            [
+                "Check_AIsMinus1_ThrowsArgumentOutOfRangeException",
+                "Check_BIsaaaa_ThrowsInvalidOperationException",
+                "Check_BoundaryValues_DoesNotThrow",
+            ],
+            passed);
+        Assert.Equal(["Check(int, string): ガードより後ろにある throw 1 件は、そこに到達する入力を求められないため例外テストの対象外です"], result.ManualItems);
     }
 
     [Fact]
