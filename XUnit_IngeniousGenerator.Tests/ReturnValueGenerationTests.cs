@@ -191,14 +191,14 @@ public class ReturnValueGenerationTests
             namespace Sample;
             public class Target
             {
-                public int Days(DateTime from) => 1;
+                public int Days(DateTimeOffset from) => 1;
             }
             """;
 
         var result = TargetCompiler.Generate(source, "Sample.Target");
 
         var item = Assert.Single(result.ManualItems);
-        Assert.StartsWith("Days(DateTime): 戻り値テスト: 戻り値を静的に計算できません（引数 from の型 DateTime は計算の対象外）", item);
+        Assert.StartsWith("Days(DateTimeOffset): 戻り値テスト: 戻り値を静的に計算できません（引数 from の型 DateTimeOffset は計算の対象外）", item);
         Assert.EndsWith("テストプロジェクトに Verify.Xunit を追加すると、実行結果を記録するテストを生成します", item);
     }
 

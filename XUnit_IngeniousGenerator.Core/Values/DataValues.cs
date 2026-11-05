@@ -146,14 +146,15 @@ public static class DataTypes
     ];
 
     /// <summary>
-    /// 境界値を計算・比較できる基本の型（int, long, double, decimal, bool, string）かを判定する
+    /// 境界値を計算・比較できる基本の型（int, long, double, decimal, bool, string, DateTime, DateOnly, TimeSpan）かを判定する
     /// </summary>
     /// <param name="type">型</param>
     /// <returns>基本の型ならtrue</returns>
     public static bool IsPrimitive(ITypeSymbol type)
     {
         return type.SpecialType is SpecialType.System_Int32 or SpecialType.System_Int64 or SpecialType.System_Double
-            or SpecialType.System_Decimal or SpecialType.System_Boolean or SpecialType.System_String;
+            or SpecialType.System_Decimal or SpecialType.System_Boolean or SpecialType.System_String
+            || TemporalValues.KindOf(type) != TemporalKind.None;
     }
 
     /// <summary>
@@ -195,12 +196,12 @@ public static class DataTypes
     }
 
     /// <summary>
-    /// 属性（InlineData）の引数に書けない列（decimal・コレクション）を含むかを判定する
+    /// 属性（InlineData）の引数に書けない列（decimal・日付・時刻・コレクション）を含むかを判定する
     /// </summary>
     /// <param name="types">列の型</param>
     /// <returns>含むならtrue</returns>
     public static bool RequiresTheoryData(IEnumerable<ITypeSymbol> types)
     {
-        return types.Any(t => t.SpecialType == SpecialType.System_Decimal || TryGetCollectionElement(t, out _));
+        return types.Any(t => t.SpecialType == SpecialType.System_Decimal || TemporalValues.KindOf(t) != TemporalKind.None || TryGetCollectionElement(t, out _));
     }
 }

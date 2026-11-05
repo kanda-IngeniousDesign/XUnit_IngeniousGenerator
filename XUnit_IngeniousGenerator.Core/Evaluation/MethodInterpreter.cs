@@ -330,6 +330,8 @@ public sealed class MethodInterpreter
                 ? Call(call)
                 : KnownMethods.Invoke(invocation, _model, EvaluateConverted),
             MemberAccessExpressionSyntax memberAccess => KnownMethods.ReadMember(memberAccess, _model, EvaluateConverted),
+            BaseObjectCreationExpressionSyntax creation when TemporalValues.KindOf(_model.GetTypeInfo(creation).Type) != TemporalKind.None =>
+                TemporalMethods.Create(creation, _model, EvaluateConverted),
             SwitchExpressionSyntax switchExpression => EvaluateSwitch(switchExpression),
             IsPatternExpressionSyntax isPattern => new PatternMatcher(_model).Matches(isPattern.Pattern, EvaluateConverted(isPattern.Expression)),
             ThrowExpressionSyntax throwExpression => throw CreateThrow(throwExpression.Expression, throwExpression),
@@ -468,7 +470,8 @@ public sealed class MethodInterpreter
     {
         if (_model.GetSymbolInfo(expression).Symbol is IMethodSymbol op
             && (op.MethodKind == MethodKind.BuiltinOperator
-                || op.ContainingType.SpecialType is SpecialType.System_String or SpecialType.System_Decimal))
+                || op.ContainingType.SpecialType is SpecialType.System_String or SpecialType.System_Decimal
+                || TemporalValues.KindOf(op.ContainingType) != TemporalKind.None))
         {
             return op;
         }
