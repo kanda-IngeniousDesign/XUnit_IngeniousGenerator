@@ -45,6 +45,7 @@ public class TemporalGenerationTests
         Assert.Contains("{ DateTime.MinValue, \"winter\" }", result.Code);
         Assert.Equal(
             [
+                "Nights_DefaultInputs_ThrowsArgumentException",
                 "Nights_BoundaryValues_ReturnsExpected",
                 "IsWeekend_BoundaryValues_ReturnsExpected",
                 "Season_BoundaryValues_ReturnsExpected",

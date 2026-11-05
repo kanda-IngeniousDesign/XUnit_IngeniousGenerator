@@ -26,15 +26,16 @@ internal sealed class ExceptionTestPlanner
     /// <param name="member">メソッド・コンストラクタ</param>
     /// <param name="statements">ガード文</param>
     /// <param name="display">レポート用の表示名</param>
+    /// <param name="reportUnrecognized">解析できないガードを要手動として記録するか（静的な評価で入力を探す場合は、そちらで記録する）</param>
     /// <returns>例外テストの一覧</returns>
-    public List<ExceptionTestCase> Plan(IMethodSymbol member, IReadOnlyList<GuardStatement> statements, string display)
+    public List<ExceptionTestCase> Plan(IMethodSymbol member, IReadOnlyList<GuardStatement> statements, string display, bool reportUnrecognized = true)
     {
         var tests = new List<ExceptionTestCase>();
         for (var i = 0; i < statements.Count; i++)
         {
             if (!statements[i].IsRecognized)
             {
-                _context.ManualItems.Add($"{display}: 条件 '{statements[i].UnrecognizedText}' を解析できないため、これ以降のガードは対象外です");
+                if (reportUnrecognized) _context.ManualItems.Add($"{display}: 条件 '{statements[i].UnrecognizedText}' を解析できないため、これ以降のガードは対象外です");
                 break;
             }
 

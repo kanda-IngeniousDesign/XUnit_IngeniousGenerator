@@ -25,7 +25,7 @@ internal static class ThrowHelperParser
         if (!helper.Name.StartsWith("ThrowIf", StringComparison.Ordinal)) return null;
 
         var cases = ParseCases(helper, invocation, model, member);
-        return cases is null ? GuardStatement.Unrecognized(invocation.ToString()) : GuardStatement.Recognized(cases);
+        return cases is null ? GuardStatement.Unrecognized(invocation.ToString(), invocation) : GuardStatement.Recognized(cases);
     }
 
     /// <summary>

@@ -119,11 +119,11 @@ public static class GuardExtractor
         if (throwStatement is null) return null;
 
         var text = ifStatement.Condition.ToString();
-        if (throwStatement.Expression is not ObjectCreationExpressionSyntax creation) return GuardStatement.Unrecognized(text);
-        if (model.GetTypeInfo(creation).Type is not INamedTypeSymbol exceptionType) return GuardStatement.Unrecognized(text);
+        if (throwStatement.Expression is not ObjectCreationExpressionSyntax creation) return GuardStatement.Unrecognized(text, ifStatement);
+        if (model.GetTypeInfo(creation).Type is not INamedTypeSymbol exceptionType) return GuardStatement.Unrecognized(text, ifStatement);
 
         var conditions = ConditionParser.Parse(ifStatement.Condition, model, member);
-        if (conditions is null) return GuardStatement.Unrecognized(text);
+        if (conditions is null) return GuardStatement.Unrecognized(text, ifStatement);
 
         var paramName = ParamNameResolver.Resolve(creation, model);
         return GuardStatement.Recognized(conditions
@@ -145,8 +145,8 @@ public static class GuardExtractor
 
         var text = coalesce.ToString();
         var parameter = ConditionParser.GetParameter(coalesce.Left, model, member);
-        if (parameter is null || throwExpression.Expression is not ObjectCreationExpressionSyntax creation) return GuardStatement.Unrecognized(text);
-        if (model.GetTypeInfo(creation).Type is not INamedTypeSymbol exceptionType) return GuardStatement.Unrecognized(text);
+        if (parameter is null || throwExpression.Expression is not ObjectCreationExpressionSyntax creation) return GuardStatement.Unrecognized(text, assignment);
+        if (model.GetTypeInfo(creation).Type is not INamedTypeSymbol exceptionType) return GuardStatement.Unrecognized(text, assignment);
 
         return GuardStatement.Recognized([new GuardCase(parameter, GuardCondition.Null, exceptionType, ParamNameResolver.Resolve(creation, model))]);
     }

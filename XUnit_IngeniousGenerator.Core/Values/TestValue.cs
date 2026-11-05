@@ -37,6 +37,9 @@ public enum TestValueKind
 
     /// <summary>Moq のモック（new Mock&lt;T&gt;().Object）</summary>
     Mock,
+
+    /// <summary>テストデータの値（境界値の入力と同じ形の .NET の値・日付・列挙型のメンバーなど）</summary>
+    Data,
 }
 
 /// <summary>
@@ -76,6 +79,9 @@ public sealed class TestValue
 
     /// <summary>コンストラクタに渡す値（Newのとき）</summary>
     public IReadOnlyList<(TestValue Value, ITypeSymbol Type)> Arguments { get; }
+
+    /// <summary>テストデータの値（Data のとき）</summary>
+    public object? Data { get; private set; }
 
     /// <summary>
     /// テスト名の条件部分（例: IsNull, IsEmpty, IsMinus1）
@@ -119,6 +125,16 @@ public sealed class TestValue
     public static TestValue OfType(TestValueKind kind, ITypeSymbol type, string memberName = "")
     {
         return new TestValue(kind, memberName, 0, type);
+    }
+
+    /// <summary>
+    /// テストデータの値（境界値の入力と同じ形の値）から作る
+    /// </summary>
+    /// <param name="data">値</param>
+    /// <returns>値（null なら Null）</returns>
+    public static TestValue FromData(object? data)
+    {
+        return data is null ? Null : new TestValue(TestValueKind.Data, string.Empty, 0, null) { Data = data };
     }
 
     /// <summary>

@@ -77,6 +77,33 @@ public sealed class MethodInterpreter
     }
 
     /// <summary>
+    /// 本体の先頭の文（ガード）だけを実行し、例外にならずに通過するかを判定する（コンストラクタの引数を決めるために使う）
+    /// </summary>
+    /// <param name="declaration">メソッド・コンストラクタの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド・コンストラクタのシンボル</param>
+    /// <param name="arguments">引数の値（引数の順）</param>
+    /// <param name="statementCount">実行する先頭の文の数</param>
+    /// <returns>通過したらtrue（例外になった、または評価できなかった場合はfalse）</returns>
+    public static bool PassesLeadingStatements(
+        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments, int statementCount)
+    {
+        if (declaration.Body is null) return false;
+
+        var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
+        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = arguments[i];
+
+        try
+        {
+            return declaration.Body.Statements.Take(statementCount).All(s => interpreter.Execute(s) == Flow.Normal);
+        }
+        catch (Exception ex) when (ex is UnsupportedSyntaxException or GuestThrowException or ArithmeticException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 式本体またはブロック本体を評価する
     /// </summary>
     /// <param name="declaration">メソッドの宣言</param>
@@ -254,7 +281,12 @@ public sealed class MethodInterpreter
     private void ExecuteGuardHelper(InvocationExpressionSyntax invocation)
     {
         var guard = ThrowHelperParser.TryParse(invocation, _model, _member);
-        if (guard is null || !guard.IsRecognized) throw new UnsupportedSyntaxException($"メソッド呼び出し '{Shorten(invocation)}'");
+        if (guard is null) throw new UnsupportedSyntaxException($"メソッド呼び出し '{Shorten(invocation)}'");
+        if (!guard.IsRecognized)
+        {
+            ExecuteComparisonHelper(invocation);
+            return;
+        }
 
         foreach (var guardCase in guard.Cases)
         {
@@ -263,6 +295,54 @@ public sealed class MethodInterpreter
                 throw new GuestThrowException(guardCase.ExceptionType, null, guardCase.ParamName, invocation);
             }
         }
+    }
+
+    /// <summary>
+    /// 値で比べる ThrowIf～（ThrowIfGreaterThan(min, max) など、ガードとして解析できない引数どうしの比較）を、引数を評価して実行する
+    /// </summary>
+    /// <param name="invocation">呼び出し式</param>
+    private void ExecuteComparisonHelper(InvocationExpressionSyntax invocation)
+    {
+        if (_model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol helper || invocation.ArgumentList.Arguments.Count is 0 or > 2)
+        {
+            throw new UnsupportedSyntaxException($"メソッド呼び出し '{Shorten(invocation)}'");
+        }
+
+        var arguments = invocation.ArgumentList.Arguments.Select(a => EvaluateConverted(a.Expression)).ToList();
+        var value = arguments[0];
+        var other = arguments.Count == 2 ? arguments[1] : 0;
+        var comparison = CompareValues(value, other);
+        var throws = (helper.Name, arguments.Count) switch
+        {
+            ("ThrowIfZero", 1) => comparison == 0,
+            ("ThrowIfNegative", 1) => comparison < 0,
+            ("ThrowIfNegativeOrZero", 1) => comparison <= 0,
+            ("ThrowIfEqual", 2) => comparison == 0,
+            ("ThrowIfNotEqual", 2) => comparison != 0,
+            ("ThrowIfLessThan", 2) => comparison < 0,
+            ("ThrowIfLessThanOrEqual", 2) => comparison <= 0,
+            ("ThrowIfGreaterThan", 2) => 0 < comparison,
+            ("ThrowIfGreaterThanOrEqual", 2) => 0 <= comparison,
+            _ => throw new UnsupportedSyntaxException($"メソッド呼び出し '{Shorten(invocation)}'"),
+        };
+
+        // ParamName は、最初の引数に書いた式（CallerArgumentExpression）になる
+        if (throws) throw new GuestThrowException(helper.ContainingType, null, invocation.ArgumentList.Arguments[0].Expression.ToString(), invocation);
+    }
+
+    /// <summary>
+    /// 数値どうし・日付どうしを比べる
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <param name="other">比べる値</param>
+    /// <returns>value が小さければ負、等しければ0、大きければ正</returns>
+    private static int CompareValues(object? value, object? other)
+    {
+        if (ClrOperations.IsNumber(value) && ClrOperations.IsNumber(other)) return ClrOperations.CompareNumbers(value!, other!);
+        if (value is DateOnlyValue date && other is DateOnlyValue otherDate) return date.CompareTo(otherDate);
+        if (value is IComparable comparable && value is DateTime or TimeSpan && value.GetType() == other?.GetType()) return comparable.CompareTo(other);
+
+        throw new UnsupportedSyntaxException("数値・日付以外の比較");
     }
 
     /// <summary>

@@ -1,6 +1,8 @@
+using XUnit_IngeniousGenerator.Core.Evaluation;
 using XUnit_IngeniousGenerator.Core.Guards;
 using XUnit_IngeniousGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace XUnit_IngeniousGenerator.Core.Generation;
 
@@ -96,7 +98,7 @@ internal sealed class ObjectConstructor
         if (declaration is not null)
         {
             var guards = GuardExtractor.Extract(declaration, _context.Compilation.GetSemanticModel(declaration.SyntaxTree), constructor);
-            if (guards.Statements.Any(s => !s.IsRecognized)) return null;
+            if (guards.Statements.Any(s => !s.IsRecognized)) return TryCreateArgumentsByEvaluation(constructor, declaration, guards);
             conditions.AddRange(guards.Statements.SelectMany(s => s.Cases));
         }
 
@@ -123,6 +125,25 @@ internal sealed class ObjectConstructor
         }
 
         return arguments;
+    }
+
+    /// <summary>
+    /// 解析できないガード（引数どうしの比較など）があるコンストラクタは、境界値の入力のうち、ガードを静的な評価で通過するものを引数にする
+    /// （引数がすべて基本の型の場合だけ）
+    /// </summary>
+    /// <param name="constructor">コンストラクタ</param>
+    /// <param name="declaration">コンストラクタの宣言</param>
+    /// <param name="guards">先頭のガード</param>
+    /// <returns>引数の値（通過する入力がなければnull）</returns>
+    private List<(TestValue, ITypeSymbol)>? TryCreateArgumentsByEvaluation(IMethodSymbol constructor, BaseMethodDeclarationSyntax declaration, MemberGuards guards)
+    {
+        if (!constructor.Parameters.All(p => DataTypes.IsPrimitive(p.Type))) return null;
+
+        var model = _context.Compilation.GetSemanticModel(declaration.SyntaxTree);
+        var recognized = new MemberGuards(guards.Statements.TakeWhile(s => s.IsRecognized).ToList(), 0);
+        var inputs = BoundaryInputGenerator.Generate(constructor, declaration, model, recognized, allowMocks: false, varyCollections: false, out _, avoidBodyThrows: false);
+        var row = inputs?.Rows.FirstOrDefault(r => MethodInterpreter.PassesLeadingStatements(declaration, model, constructor, r, guards.Statements.Count));
+        return row?.Select((value, i) => (TestValue.FromData(value), constructor.Parameters[i].Type)).ToList();
     }
 
     /// <summary>

@@ -132,6 +132,7 @@ public sealed class ValueRenderer
             TestValueKind.New => RenderNew(value),
             TestValueKind.Default => DefaultExpression(RenderType(value.Type!)),
             TestValueKind.Mock => RenderMock(value.Type!),
+            TestValueKind.Data => RenderData(value.Data),
             _ => RenderEmptyArray((IArrayTypeSymbol)value.Type!),
         };
     }
