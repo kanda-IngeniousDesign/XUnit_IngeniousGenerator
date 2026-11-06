@@ -64,7 +64,7 @@ internal sealed class TestSyntaxBuilder
     /// <returns>テストメソッドの宣言</returns>
     public MethodDeclarationSyntax BuildNotTestedTest(NotTestedTestCase test)
     {
-        var reason = "未テスト: " + string.Join(" / ", test.Reasons);
+        var reason = Messages.Get("NotTestedPrefix") + string.Join(" / ", test.Reasons);
         var skip = AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(reason)))
             .WithNameEquals(NameEquals(IdentifierName("Skip")));
         return MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), test.TestName)

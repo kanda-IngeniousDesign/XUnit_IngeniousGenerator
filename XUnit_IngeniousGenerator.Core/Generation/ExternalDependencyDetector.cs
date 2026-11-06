@@ -52,8 +52,8 @@ internal static class ExternalDependencyDetector
             if (symbol is null) continue;
 
             var fullName = GetFullName(symbol);
-            if (NonDeterministicMembers.Any(m => Matches(fullName, m))) return (true, $"'{name}' は実行するたびに結果が変わるため");
-            if (ExternalPrefixes.Any(p => Matches(fullName, p))) return (false, $"'{name}' は外部環境（ファイル・DB・通信など）に依存するため");
+            if (NonDeterministicMembers.Any(m => Matches(fullName, m))) return (true, Messages.Get("NonDeterministicMember", name));
+            if (ExternalPrefixes.Any(p => Matches(fullName, p))) return (false, Messages.Get("ExternalMember", name));
         }
 
         return null;

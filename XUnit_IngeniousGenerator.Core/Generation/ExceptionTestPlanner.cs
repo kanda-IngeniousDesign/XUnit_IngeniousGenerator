@@ -35,7 +35,7 @@ internal sealed class ExceptionTestPlanner
         {
             if (!statements[i].IsRecognized)
             {
-                if (reportUnrecognized) _context.ManualItems.Add($"{display}: 条件 '{statements[i].UnrecognizedText}' を解析できないため、これ以降のガードは対象外です");
+                if (reportUnrecognized) _context.ManualItems.Add($"{display}: {Messages.Get("UnrecognizedGuard", statements[i].UnrecognizedText)}");
                 break;
             }
 
@@ -82,7 +82,7 @@ internal sealed class ExceptionTestPlanner
                 parameter.Type, GetConditionsUpTo(statements, index, parameter), _context.Options.UseMoq, _context.Constructor.CreateDependency);
             if (valid is null)
             {
-                _context.ManualItems.Add($"{display}: 引数 {parameter.Name} の有効な値を決められないため、{target.Name} の{violating.ConditionName}のテストは対象外です");
+                _context.ManualItems.Add($"{display}: {Messages.Get("NoValidValue", parameter.Name, target.Name, violating.ConditionName)}");
                 return null;
             }
 

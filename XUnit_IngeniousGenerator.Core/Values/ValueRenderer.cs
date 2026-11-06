@@ -107,7 +107,7 @@ public sealed class ValueRenderer
             long l => Signed(l < 0, SuffixedLiteral(Math.Abs((decimal)l).ToString(CultureInfo.InvariantCulture), "L", (ulong)Math.Abs((decimal)l))),
             double d => Signed(d < 0, SuffixedLiteral(Math.Abs(d).ToString("R", CultureInfo.InvariantCulture), "D", Math.Abs(d))),
             decimal m => Signed(m < 0, SuffixedLiteral(TrimDecimal(Math.Abs(m)).ToString(CultureInfo.InvariantCulture), "M", Math.Abs(m))),
-            _ => throw new ArgumentException($"未対応の値の型です: {value.GetType()}", nameof(value)),
+            _ => throw new ArgumentException($"Unsupported value type: {value.GetType()}", nameof(value)),
         };
     }
 

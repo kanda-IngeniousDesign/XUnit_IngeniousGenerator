@@ -37,7 +37,7 @@ internal sealed class PatternMatcher
             BinaryPatternSyntax binary => Matches(binary.Left, value) || Matches(binary.Right, value),
             ConstantPatternSyntax constant => ClrOperations.ValuesEqual(value, GetConstant(constant.Expression)),
             RelationalPatternSyntax relational => MatchesRelational(relational, value),
-            _ => throw new UnsupportedSyntaxException($"パターン '{pattern}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedPattern", pattern)),
         };
     }
 
@@ -69,6 +69,6 @@ internal sealed class PatternMatcher
     private object? GetConstant(ExpressionSyntax expression)
     {
         var constant = _model.GetConstantValue(expression);
-        return constant.HasValue ? constant.Value : throw new UnsupportedSyntaxException($"定数でないパターン '{expression}'");
+        return constant.HasValue ? constant.Value : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNonConstantPattern", expression));
     }
 }

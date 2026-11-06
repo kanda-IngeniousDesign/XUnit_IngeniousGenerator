@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AbstractConstructor" xml:space="preserve">
+    <value>抽象クラスのコンストラクタは直接呼べないため対象外です</value>
+  </data>
+  <data name="AsyncVoid" xml:space="preserve">
+    <value>async void は例外を捕捉できないため対象外です</value>
+  </data>
+  <data name="CannotCreateArgument" xml:space="preserve">
+    <value>引数 {0} の値を作れません{1}</value>
+  </data>
+  <data name="DuplicateTestName" xml:space="preserve">
+    <value>テスト名 {0} が重複するため生成していません</value>
+  </data>
+  <data name="ExternalDependencyNoThrowOnly" xml:space="preserve">
+    <value>{0}、戻り値は確認せず、例外が出ないことだけを確認します</value>
+  </data>
+  <data name="ExternalDependencyNotTested" xml:space="preserve">
+    <value>{0}、単体テストでは担保しません（UIオーケストレーター側で確認）</value>
+  </data>
+  <data name="ExternalMember" xml:space="preserve">
+    <value>'{0}' は外部環境（ファイル・DB・通信など）に依存するため</value>
+  </data>
+  <data name="GenericMethod" xml:space="preserve">
+    <value>ジェネリックメソッドは型引数を決められないため対象外です</value>
+  </data>
+  <data name="Iterator" xml:space="preserve">
+    <value>イテレーター（yield）は列挙するまで処理が動かないため対象外です</value>
+  </data>
+  <data name="KindNoThrow" xml:space="preserve">
+    <value>例外が出ないことの確認</value>
+  </data>
+  <data name="KindReturnValue" xml:space="preserve">
+    <value>戻り値テスト</value>
+  </data>
+  <data name="MoqHint" xml:space="preserve">
+    <value>。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします</value>
+  </data>
+  <data name="NoTestToGenerate" xml:space="preserve">
+    <value>自動生成できるテストがありません（先頭のガードも戻り値もないため）</value>
+  </data>
+  <data name="NoValidValue" xml:space="preserve">
+    <value>引数 {0} の有効な値を決められないため、{1} の{2}のテストは対象外です</value>
+  </data>
+  <data name="NonDeterministicMember" xml:space="preserve">
+    <value>'{0}' は実行するたびに結果が変わるため</value>
+  </data>
+  <data name="NotTestedPrefix" xml:space="preserve">
+    <value>未テスト: </value>
+  </data>
+  <data name="OutOfScopeExplicitImplementation" xml:space="preserve">
+    <value>インターフェースの明示的な実装は自動生成の対象外です</value>
+  </data>
+  <data name="OutOfScopeGenericClass" xml:space="preserve">
+    <value>ジェネリッククラスは型引数を決められないため対象外です</value>
+  </data>
+  <data name="OutOfScopeGetter" xml:space="preserve">
+    <value>プロパティの get は自動生成の対象外です</value>
+  </data>
+  <data name="OutOfScopeIndexer" xml:space="preserve">
+    <value>インデクサーは自動生成の対象外です</value>
+  </data>
+  <data name="OutOfScopeInitAccessor" xml:space="preserve">
+    <value>init アクセサーはオブジェクト初期化子でしか呼べないため対象外です</value>
+  </data>
+  <data name="OutOfScopeNestedClass" xml:space="preserve">
+    <value>入れ子のクラスは自動生成の対象外です</value>
+  </data>
+  <data name="OutOfScopeNonPublicClass" xml:space="preserve">
+    <value>public でないクラスは自動生成の対象外です（テストする場合は public にしてください）</value>
+  </data>
+  <data name="OutOfScopeNonPublicMember" xml:space="preserve">
+    <value>public でない関数は自動生成の対象外です</value>
+  </data>
+  <data name="OutOfScopeOperator" xml:space="preserve">
+    <value>演算子は自動生成の対象外です</value>
+  </data>
+  <data name="OutOfScopeStaticConstructor" xml:space="preserve">
+    <value>静的コンストラクタは直接呼べないため対象外です</value>
+  </data>
+  <data name="ParameterTypeNotComputable" xml:space="preserve">
+    <value>引数 {0} の型 {1} は計算の対象外</value>
+  </data>
+  <data name="RefParameters" xml:space="preserve">
+    <value>ref / out / in 引数を持つメソッドは対象外です</value>
+  </data>
+  <data name="ReturnNotComputable" xml:space="preserve">
+    <value>戻り値を静的に計算できません（{0}）。テストプロジェクトに Verify.Xunit を追加すると、実行結果を記録するテストを生成します</value>
+  </data>
+  <data name="ReturnType" xml:space="preserve">
+    <value>戻り値の型 {0}</value>
+  </data>
+  <data name="ReturnsNaN" xml:space="preserve">
+    <value>NaN または無限大を返す入力があります</value>
+  </data>
+  <data name="ReturnsNull" xml:space="preserve">
+    <value>null を返す入力があります</value>
+  </data>
+  <data name="ScaffoldCannotStartDotnet" xml:space="preserve">
+    <value>dotnet を起動できないため、ソリューションへの追加は手動で行ってください</value>
+  </data>
+  <data name="ScaffoldDotnetNotFound" xml:space="preserve">
+    <value>dotnet が見つからないため、ソリューションへの追加は手動で行ってください</value>
+  </data>
+  <data name="ScaffoldNoSolution" xml:space="preserve">
+    <value>ソリューションが見つからないため、ソリューションへの追加は手動で行ってください</value>
+  </data>
+  <data name="ScaffoldProjectExists" xml:space="preserve">
+    <value>{0} は既にあります</value>
+  </data>
+  <data name="ScaffoldSlnAddFailed" xml:space="preserve">
+    <value>ソリューションへの追加に失敗しました: {0}</value>
+  </data>
+  <data name="ScaffoldSlnAddTimeout" xml:space="preserve">
+    <value>dotnet sln add が時間内に終わらなかったため、ソリューションへの追加を確認してください</value>
+  </data>
+  <data name="SutAbstractClass" xml:space="preserve">
+    <value>抽象クラスは具象サブクラスが必要なため</value>
+  </data>
+  <data name="SutBlocked" xml:space="preserve">
+    <value>テスト対象のインスタンスを生成できないため対象外です（{0}）</value>
+  </data>
+  <data name="SutNoConstructor" xml:space="preserve">
+    <value>ガードを通過する引数を決められるpublicコンストラクタがないため</value>
+  </data>
+  <data name="SutNullArguments" xml:space="preserve">
+    <value>引数 {0} を作れないため null を渡してテスト対象を生成しています（それを使う処理のテストは例外になります）</value>
+  </data>
+  <data name="SutStaticClass" xml:space="preserve">
+    <value>staticクラスのため</value>
+  </data>
+  <data name="UnreachableGuard" xml:space="preserve">
+    <value>条件 '{0}' を解析できず、例外になる入力も見つからないため、このガードは対象外です</value>
+  </data>
+  <data name="UnreachableLaterThrows" xml:space="preserve">
+    <value>ガードより後ろにある throw {0} 件は、そこに到達する入力を求められないため例外テストの対象外です</value>
+  </data>
+  <data name="UnrecognizedGuard" xml:space="preserve">
+    <value>条件 '{0}' を解析できないため、これ以降のガードは対象外です</value>
+  </data>
+  <data name="UnsupportedComparison" xml:space="preserve">
+    <value>'{0}' の比較</value>
+  </data>
+  <data name="UnsupportedConversion" xml:space="preserve">
+    <value>型 '{0}' への変換</value>
+  </data>
+  <data name="UnsupportedConversionFromTo" xml:space="preserve">
+    <value>'{0}' から {1} への変換</value>
+  </data>
+  <data name="UnsupportedCreation" xml:space="preserve">
+    <value>生成 '{0}'</value>
+  </data>
+  <data name="UnsupportedCultureComparison" xml:space="preserve">
+    <value>カルチャに依存する文字列の比較</value>
+  </data>
+  <data name="UnsupportedCultureConcat" xml:space="preserve">
+    <value>カルチャに依存する文字列変換（double / decimal の連結）</value>
+  </data>
+  <data name="UnsupportedDecimalComparison" xml:space="preserve">
+    <value>decimal に収まらない数値の比較</value>
+  </data>
+  <data name="UnsupportedDeepCall" xml:space="preserve">
+    <value>深い呼び出し '{0}'</value>
+  </data>
+  <data name="UnsupportedExpression" xml:space="preserve">
+    <value>式 '{0}'</value>
+  </data>
+  <data name="UnsupportedExpressionStatement" xml:space="preserve">
+    <value>式文 '{0}'</value>
+  </data>
+  <data name="UnsupportedFieldAssignment" xml:space="preserve">
+    <value>フィールド・プロパティへの代入 '{0}'</value>
+  </data>
+  <data name="UnsupportedFieldReference" xml:space="preserve">
+    <value>フィールド・プロパティ '{0}' の参照</value>
+  </data>
+  <data name="UnsupportedInterpolation" xml:space="preserve">
+    <value>文字列補間（カルチャに依存するため）</value>
+  </data>
+  <data name="UnsupportedLocal" xml:space="preserve">
+    <value>ローカル変数 '{0}'</value>
+  </data>
+  <data name="UnsupportedLongString" xml:space="preserve">
+    <value>長すぎる文字列（幅 {0}）</value>
+  </data>
+  <data name="UnsupportedLoop" xml:space="preserve">
+    <value>ループ</value>
+  </data>
+  <data name="UnsupportedMathAbs" xml:space="preserve">
+    <value>Math.Abs の引数の型</value>
+  </data>
+  <data name="UnsupportedMathRounding" xml:space="preserve">
+    <value>Math の丸めの引数の型</value>
+  </data>
+  <data name="UnsupportedMember" xml:space="preserve">
+    <value>メンバー '{0}' の参照</value>
+  </data>
+  <data name="UnsupportedMethodCall" xml:space="preserve">
+    <value>メソッド呼び出し '{0}'</value>
+  </data>
+  <data name="UnsupportedNoBody" xml:space="preserve">
+    <value>本体がありません</value>
+  </data>
+  <data name="UnsupportedNoReturnPath" xml:space="preserve">
+    <value>値を返さずに終了する経路があります</value>
+  </data>
+  <data name="UnsupportedNoReturnPathIn" xml:space="preserve">
+    <value>値を返さずに終了する経路 '{0}'</value>
+  </data>
+  <data name="UnsupportedNonBoolCondition" xml:space="preserve">
+    <value>bool 以外の条件</value>
+  </data>
+  <data name="UnsupportedNonConstantCase" xml:space="preserve">
+    <value>定数でない case '{0}'</value>
+  </data>
+  <data name="UnsupportedNonConstantPattern" xml:space="preserve">
+    <value>定数でないパターン '{0}'</value>
+  </data>
+  <data name="UnsupportedNonDeterministicMember" xml:space="preserve">
+    <value>メンバー '{0}' の参照（実行するたびに値が変わるものなど）</value>
+  </data>
+  <data name="UnsupportedNonIntArgument" xml:space="preserve">
+    <value>int 以外の引数</value>
+  </data>
+  <data name="UnsupportedNonNumericArgument" xml:space="preserve">
+    <value>数値以外の引数</value>
+  </data>
+  <data name="UnsupportedNonNumericComparison" xml:space="preserve">
+    <value>数値・日付以外の比較</value>
+  </data>
+  <data name="UnsupportedNullConversion" xml:space="preserve">
+    <value>null から '{0}' への変換</value>
+  </data>
+  <data name="UnsupportedOperation" xml:space="preserve">
+    <value>演算 '{0}'</value>
+  </data>
+  <data name="UnsupportedOperator" xml:space="preserve">
+    <value>演算子 '{0}'（ユーザー定義の演算子など）</value>
+  </data>
+  <data name="UnsupportedPattern" xml:space="preserve">
+    <value>パターン '{0}'</value>
+  </data>
+  <data name="UnsupportedRecursion" xml:space="preserve">
+    <value>再帰呼び出し '{0}'</value>
+  </data>
+  <data name="UnsupportedStatement" xml:space="preserve">
+    <value>文 '{0}'</value>
+  </data>
+  <data name="UnsupportedSwitchExpressionWhen" xml:space="preserve">
+    <value>switch 式の when 句</value>
+  </data>
+  <data name="UnsupportedSwitchStatementWhen" xml:space="preserve">
+    <value>switch 文の when 句</value>
+  </data>
+  <data name="UnsupportedTemporalOperation" xml:space="preserve">
+    <value>日付・時刻の演算 '{0}'</value>
+  </data>
+  <data name="UnsupportedTooManySteps" xml:space="preserve">
+    <value>計算量が多すぎる（同じクラスの関数の呼び出しが多い）</value>
+  </data>
+  <data name="UnsupportedTry" xml:space="preserve">
+    <value>try 文</value>
+  </data>
+  <data name="UnsupportedTypeOperation" xml:space="preserve">
+    <value>型 '{0}' の演算</value>
+  </data>
+  <data name="UnsupportedUnary" xml:space="preserve">
+    <value>単項演算 '{0}'</value>
+  </data>
+  <data name="UnsupportedUninitializedLocal" xml:space="preserve">
+    <value>初期値のないローカル変数 '{0}'</value>
+  </data>
+  <data name="UnsupportedUsing" xml:space="preserve">
+    <value>using 文</value>
+  </data>
+</root>

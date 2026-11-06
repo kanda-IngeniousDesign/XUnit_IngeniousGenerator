@@ -40,7 +40,7 @@ internal sealed class MemberPlan
     {
         var display = MemberDisplay.Of(member);
         var outOfScope = TestTargets.GetOutOfScopeReason(member)
-            ?? (targetType.IsGenericType ? "ジェネリッククラスは型引数を決められないため対象外です" : null);
+            ?? (targetType.IsGenericType ? Messages.Get("OutOfScopeGenericClass") : null);
         if (outOfScope is not null)
         {
             // 自動生成の対象外でも、フィールドを返すだけの get など処理のないものは、一覧に載せない
@@ -58,9 +58,9 @@ internal sealed class MemberPlan
         // 処理があるのにテストも理由もない（ガードのないコンストラクタ・set など）ものも、黙って外さない
         if (tests.Count == 0 && reasons.Count == 0 && TestTargets.HasLogic(member))
         {
-            const string NoTest = "自動生成できるテストがありません（先頭のガードも戻り値もないため）";
-            reasons.Add(NoTest);
-            manualItems.Add($"{display}: {NoTest}");
+            var noTest = Messages.Get("NoTestToGenerate");
+            reasons.Add(noTest);
+            manualItems.Add($"{display}: {noTest}");
         }
 
         return new MemberPlan(tests, manualItems, context.NotGeneratableItems, reasons);

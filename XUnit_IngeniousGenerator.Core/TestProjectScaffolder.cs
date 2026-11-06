@@ -31,7 +31,7 @@ public static class TestProjectScaffolder
     {
         var projectName = Path.GetFileName(testProjectDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var projectPath = Path.Combine(testProjectDirectory, projectName + ".csproj");
-        if (File.Exists(projectPath)) return ScaffoldResult.Failed($"{projectPath} は既にあります");
+        if (File.Exists(projectPath)) return ScaffoldResult.Failed(Messages.Get("ScaffoldProjectExists", projectPath));
 
         Directory.CreateDirectory(testProjectDirectory);
         File.WriteAllText(projectPath, BuildProjectFile(testProjectDirectory, productProjectPath));
@@ -40,7 +40,7 @@ public static class TestProjectScaffolder
         Directory.CreateDirectory(Path.GetDirectoryName(testFilePath)!);
         File.WriteAllText(testFilePath, testCode);
 
-        if (solutionPath is null) return ScaffoldResult.Succeeded(projectPath, "ソリューションが見つからないため、ソリューションへの追加は手動で行ってください");
+        if (solutionPath is null) return ScaffoldResult.Succeeded(projectPath, Messages.Get("ScaffoldNoSolution"));
         var addError = AddToSolution(solutionPath, projectPath);
         return addError is null ? ScaffoldResult.Succeeded(projectPath, null) : ScaffoldResult.Succeeded(projectPath, addError);
     }
@@ -173,21 +173,21 @@ public static class TestProjectScaffolder
             // 再利用のために残る MSBuild のプロセスが出力をつかんだままにすると、終了を待ち続けて IDE が止まるため、再利用させない
             startInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
             using var process = Process.Start(startInfo);
-            if (process is null) return "dotnet を起動できないため、ソリューションへの追加は手動で行ってください";
+            if (process is null) return Messages.Get("ScaffoldCannotStartDotnet");
 
             // 出力は非同期で読み、待つ時間を必ず上限で区切る（読み切るまで待つと、上限が効かない）
             var output = process.StandardOutput.ReadToEndAsync();
             var error = process.StandardError.ReadToEndAsync();
-            if (!process.WaitForExit((int)SolutionAddTimeout.TotalMilliseconds)) return "dotnet sln add が時間内に終わらなかったため、ソリューションへの追加を確認してください";
+            if (!process.WaitForExit((int)SolutionAddTimeout.TotalMilliseconds)) return Messages.Get("ScaffoldSlnAddTimeout");
             if (process.ExitCode == 0) return null;
 
             var message = error.Wait(SolutionAddTimeout) ? error.Result.Trim() : string.Empty;
-            return $"ソリューションへの追加に失敗しました: {message}";
+            return Messages.Get("ScaffoldSlnAddFailed", message);
         }
         catch (System.ComponentModel.Win32Exception)
         {
             // dotnet が PATH にない環境
-            return "dotnet が見つからないため、ソリューションへの追加は手動で行ってください";
+            return Messages.Get("ScaffoldDotnetNotFound");
         }
     }
 

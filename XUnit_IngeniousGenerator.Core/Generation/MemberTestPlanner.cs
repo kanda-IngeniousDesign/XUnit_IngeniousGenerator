@@ -82,7 +82,7 @@ internal sealed class MemberTestPlanner
         var display = MemberDisplay.Of(member);
         if (!member.IsStatic && _sut.Constructor is null)
         {
-            _context.ManualItems.Add($"{display}: テスト対象のインスタンスを生成できないため対象外です（{_sut.Blocker}）");
+            _context.ManualItems.Add($"{display}: {Messages.Get("SutBlocked", _sut.Blocker)}");
             return [];
         }
 
@@ -97,14 +97,14 @@ internal sealed class MemberTestPlanner
     /// <returns>作れない理由（作れる場合はnull）</returns>
     private string? FindBlocker(IMethodSymbol member, BaseMethodDeclarationSyntax declaration)
     {
-        if (member.IsGenericMethod) return "ジェネリックメソッドは型引数を決められないため対象外です";
-        if (member.Parameters.Any(p => p.RefKind != RefKind.None)) return "ref / out / in 引数を持つメソッドは対象外です";
-        if (declaration.DescendantNodes().OfType<YieldStatementSyntax>().Any()) return "イテレーター（yield）は列挙するまで処理が動かないため対象外です";
-        if (member.IsAsync && member.ReturnsVoid) return "async void は例外を捕捉できないため対象外です";
-        if (member.MethodKind == MethodKind.Constructor && member.ContainingType.IsAbstract) return "抽象クラスのコンストラクタは直接呼べないため対象外です";
+        if (member.IsGenericMethod) return Messages.Get("GenericMethod");
+        if (member.Parameters.Any(p => p.RefKind != RefKind.None)) return Messages.Get("RefParameters");
+        if (declaration.DescendantNodes().OfType<YieldStatementSyntax>().Any()) return Messages.Get("Iterator");
+        if (member.IsAsync && member.ReturnsVoid) return Messages.Get("AsyncVoid");
+        if (member.MethodKind == MethodKind.Constructor && member.ContainingType.IsAbstract) return Messages.Get("AbstractConstructor");
         if (member.MethodKind == MethodKind.Ordinary && !member.IsStatic && _sut.Constructor is null)
         {
-            return $"テスト対象のインスタンスを生成できないため対象外です（{_sut.Blocker}）";
+            return Messages.Get("SutBlocked", _sut.Blocker);
         }
 
         return null;

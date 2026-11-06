@@ -85,12 +85,12 @@ internal sealed class LaterThrowTestPlanner
             if (site is null) continue;
 
             uncovered.Remove(site);
-            _context.ManualItems.Add($"{display}: 条件 '{statement.UnrecognizedText}' を解析できず、例外になる入力も見つからないため、このガードは対象外です");
+            _context.ManualItems.Add($"{display}: {Messages.Get("UnreachableGuard", statement.UnrecognizedText)}");
         }
 
         if (0 < uncovered.Count)
         {
-            _context.ManualItems.Add($"{display}: ガードより後ろにある throw {uncovered.Count} 件は、そこに到達する入力を求められないため例外テストの対象外です");
+            _context.ManualItems.Add($"{display}: {Messages.Get("UnreachableLaterThrows", uncovered.Count)}");
         }
     }
 
