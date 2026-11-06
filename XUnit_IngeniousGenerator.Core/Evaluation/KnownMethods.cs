@@ -19,7 +19,7 @@ internal static class KnownMethods
     {
         if (model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method)
         {
-            throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'");
+            throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", invocation.Expression));
         }
 
         if (TemporalMethods.TryInvoke(invocation, method, evaluate, out var temporal)) return temporal;
@@ -28,7 +28,7 @@ internal static class KnownMethods
         {
             if (method.ContainingType.SpecialType != SpecialType.System_String || invocation.Expression is not MemberAccessExpressionSyntax receiver)
             {
-                throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'");
+                throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", invocation.Expression));
             }
 
             // null のメソッド呼び出しは実行時に NullReferenceException になる
@@ -51,7 +51,7 @@ internal static class KnownMethods
             ("System.Math", "Round", 2) when arguments[1] is int digits => Rounding(arguments[0], d => Math.Round(d, digits), m => Math.Round(m, digits)),
             ("string", "Equals", 2) when method.Parameters[0].Type.SpecialType == SpecialType.System_String =>
                 string.Equals((string?)arguments[0], (string?)arguments[1], StringComparison.Ordinal),
-            _ => throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", invocation.Expression)),
         };
     }
 
@@ -74,7 +74,7 @@ internal static class KnownMethods
                 : throw new GuestThrowException(null, "System.NullReferenceException", null, memberAccess);
         }
 
-        throw new UnsupportedSyntaxException($"メンバー '{memberAccess}' の参照");
+        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMember", memberAccess));
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ internal static class KnownMethods
         {
             double d => forDouble(d),
             decimal m => forDecimal(m),
-            _ => throw new UnsupportedSyntaxException("Math の丸めの引数の型"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMathRounding")),
         };
     }
 
@@ -107,7 +107,7 @@ internal static class KnownMethods
             long l => Math.Abs(l),
             double d => Math.Abs(d),
             decimal m => Math.Abs(m),
-            _ => throw new UnsupportedSyntaxException("Math.Abs の引数の型"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMathAbs")),
         };
     }
 }

@@ -34,7 +34,7 @@ public sealed class CreateTestProjectCodeAction : CodeAction
         _onlyMember = onlyMember;
     }
 
-    public override string Title => $"Fix : テストプロジェクト（{TestProjectName}）を作成してテストコードを生成する";
+    public override string Title => Resources.Get("Fix_CreateTestProject", TestProjectName);
 
     // 一括適用（すべて修正）で複数のプロジェクト作成が同時に走らないよう、等価キーを持たせない
     public override string? EquivalenceKey => null;

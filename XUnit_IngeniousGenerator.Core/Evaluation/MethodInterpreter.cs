@@ -136,11 +136,11 @@ public sealed class MethodInterpreter
     private EvaluationResult Run(BaseMethodDeclarationSyntax declaration)
     {
         if (declaration.ExpressionBody is { } arrow) return EvaluationResult.Returned(EvaluateConverted(arrow.Expression));
-        if (declaration.Body is null) return EvaluationResult.Unsupported("本体がありません");
+        if (declaration.Body is null) return EvaluationResult.Unsupported(Messages.Get("UnsupportedNoBody"));
 
         return Execute(declaration.Body) == Flow.Return
             ? EvaluationResult.Returned(_returnValue)
-            : EvaluationResult.Unsupported("値を返さずに終了する経路があります");
+            : EvaluationResult.Unsupported(Messages.Get("UnsupportedNoReturnPath"));
     }
 
     /// <summary>
@@ -241,10 +241,10 @@ public sealed class MethodInterpreter
         {
             case CaseSwitchLabelSyntax caseLabel:
                 var constant = _model.GetConstantValue(caseLabel.Value);
-                if (!constant.HasValue) throw new UnsupportedSyntaxException($"定数でない case '{caseLabel.Value}'");
+                if (!constant.HasValue) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNonConstantCase", caseLabel.Value));
                 return ClrOperations.ValuesEqual(value, constant.Value);
             case CasePatternSwitchLabelSyntax patternLabel:
-                if (patternLabel.WhenClause is not null) throw new UnsupportedSyntaxException("switch 文の when 句");
+                if (patternLabel.WhenClause is not null) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedSwitchStatementWhen"));
                 return matcher.Matches(patternLabel.Pattern, value);
             default:
                 return false;
@@ -270,9 +270,9 @@ public sealed class MethodInterpreter
     {
         foreach (var variable in local.Declaration.Variables)
         {
-            if (variable.Initializer is null) throw new UnsupportedSyntaxException($"初期値のないローカル変数 '{variable.Identifier.ValueText}'");
+            if (variable.Initializer is null) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedUninitializedLocal", variable.Identifier.ValueText));
 
-            var symbol = _model.GetDeclaredSymbol(variable) ?? throw new UnsupportedSyntaxException($"ローカル変数 '{variable.Identifier.ValueText}'");
+            var symbol = _model.GetDeclaredSymbol(variable) ?? throw new UnsupportedSyntaxException(Messages.Get("UnsupportedLocal", variable.Identifier.ValueText));
             _variables[symbol] = EvaluateConverted(variable.Initializer.Value);
         }
     }
@@ -295,7 +295,7 @@ public sealed class MethodInterpreter
                 Assign(assignment);
                 return;
             default:
-                throw new UnsupportedSyntaxException($"式文 '{Shorten(expression)}'");
+                throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpressionStatement", Shorten(expression)));
         }
     }
 
@@ -306,7 +306,7 @@ public sealed class MethodInterpreter
     private void ExecuteGuardHelper(InvocationExpressionSyntax invocation)
     {
         var guard = ThrowHelperParser.TryParse(invocation, _model, _member);
-        if (guard is null) throw new UnsupportedSyntaxException($"メソッド呼び出し '{Shorten(invocation)}'");
+        if (guard is null) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", Shorten(invocation)));
         if (!guard.IsRecognized)
         {
             ExecuteComparisonHelper(invocation);
@@ -330,7 +330,7 @@ public sealed class MethodInterpreter
     {
         if (_model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol helper || invocation.ArgumentList.Arguments.Count is 0 or > 2)
         {
-            throw new UnsupportedSyntaxException($"メソッド呼び出し '{Shorten(invocation)}'");
+            throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", Shorten(invocation)));
         }
 
         var arguments = invocation.ArgumentList.Arguments.Select(a => EvaluateConverted(a.Expression)).ToList();
@@ -348,7 +348,7 @@ public sealed class MethodInterpreter
             ("ThrowIfLessThanOrEqual", 2) => comparison <= 0,
             ("ThrowIfGreaterThan", 2) => 0 < comparison,
             ("ThrowIfGreaterThanOrEqual", 2) => 0 <= comparison,
-            _ => throw new UnsupportedSyntaxException($"メソッド呼び出し '{Shorten(invocation)}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", Shorten(invocation))),
         };
 
         // ParamName は、最初の引数に書いた式（CallerArgumentExpression）になる
@@ -367,7 +367,7 @@ public sealed class MethodInterpreter
         if (value is DateOnlyValue date && other is DateOnlyValue otherDate) return date.CompareTo(otherDate);
         if (value is IComparable comparable && value is DateTime or TimeSpan && value.GetType() == other?.GetType()) return comparable.CompareTo(other);
 
-        throw new UnsupportedSyntaxException("数値・日付以外の比較");
+        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNonNumericComparison"));
     }
 
     /// <summary>
@@ -379,7 +379,7 @@ public sealed class MethodInterpreter
         var target = _model.GetSymbolInfo(assignment.Left).Symbol;
         if (target is not (ILocalSymbol or IParameterSymbol) || !_variables.ContainsKey(target))
         {
-            throw new UnsupportedSyntaxException($"フィールド・プロパティへの代入 '{Shorten(assignment)}'");
+            throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldAssignment", Shorten(assignment)));
         }
 
         if (assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
@@ -440,8 +440,8 @@ public sealed class MethodInterpreter
             SwitchExpressionSyntax switchExpression => EvaluateSwitch(switchExpression),
             IsPatternExpressionSyntax isPattern => new PatternMatcher(_model).Matches(isPattern.Pattern, EvaluateConverted(isPattern.Expression)),
             ThrowExpressionSyntax throwExpression => throw CreateThrow(throwExpression.Expression, throwExpression),
-            InterpolatedStringExpressionSyntax => throw new UnsupportedSyntaxException("文字列補間（カルチャに依存するため）"),
-            _ => throw new UnsupportedSyntaxException($"式 '{Shorten(expression)}'"),
+            InterpolatedStringExpressionSyntax => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedInterpolation")),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpression", Shorten(expression))),
         };
     }
 
@@ -452,8 +452,8 @@ public sealed class MethodInterpreter
     /// <returns>戻り値（void の関数はnull）</returns>
     private object? Call(SameClassCall call)
     {
-        if (_callStack.Contains(call.Method)) throw new UnsupportedSyntaxException($"再帰呼び出し '{call.Method.Name}'");
-        if (SameClassCall.MaxDepth <= _callStack.Count) throw new UnsupportedSyntaxException($"深い呼び出し '{call.Method.Name}'");
+        if (_callStack.Contains(call.Method)) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedRecursion", call.Method.Name));
+        if (SameClassCall.MaxDepth <= _callStack.Count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedDeepCall", call.Method.Name));
 
         var callee = new MethodInterpreter(call.Model, call.Method, _callStack, _budget);
         foreach (var argument in call.Arguments)
@@ -482,7 +482,7 @@ public sealed class MethodInterpreter
         var flow = Execute(declaration.Body!);
         if (flow == Flow.Return) return _returnValue;
         if (_member.ReturnsVoid) return null;
-        throw new UnsupportedSyntaxException($"値を返さずに終了する経路 '{_member.Name}'");
+        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNoReturnPathIn", _member.Name));
     }
 
     /// <summary>
@@ -495,7 +495,7 @@ public sealed class MethodInterpreter
         var symbol = _model.GetSymbolInfo(identifier).Symbol;
         if (symbol is not null && _variables.TryGetValue(symbol, out var value)) return value;
 
-        throw new UnsupportedSyntaxException($"フィールド・プロパティ '{identifier.Identifier.ValueText}' の参照");
+        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", identifier.Identifier.ValueText));
     }
 
     /// <summary>
@@ -545,7 +545,7 @@ public sealed class MethodInterpreter
         var matcher = new PatternMatcher(_model);
         foreach (var arm in switchExpression.Arms)
         {
-            if (arm.WhenClause is not null) throw new UnsupportedSyntaxException("switch 式の when 句");
+            if (arm.WhenClause is not null) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedSwitchExpressionWhen"));
             if (matcher.Matches(arm.Pattern, value)) return EvaluateConverted(arm.Expression);
         }
 
@@ -581,7 +581,7 @@ public sealed class MethodInterpreter
             return op;
         }
 
-        throw new UnsupportedSyntaxException($"演算子 '{Shorten(expression)}'（ユーザー定義の演算子など）");
+        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedOperator", Shorten(expression)));
     }
 
     /// <summary>
@@ -591,7 +591,7 @@ public sealed class MethodInterpreter
     /// <returns>bool の値</returns>
     private static bool ToBoolean(object? value)
     {
-        return value is bool b ? b : throw new UnsupportedSyntaxException("bool 以外の条件");
+        return value is bool b ? b : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNonBoolCondition"));
     }
 
     /// <summary>
@@ -619,10 +619,10 @@ public sealed class MethodInterpreter
     {
         return statement switch
         {
-            ForStatementSyntax or ForEachStatementSyntax or WhileStatementSyntax or DoStatementSyntax => "ループ",
-            TryStatementSyntax => "try 文",
-            UsingStatementSyntax => "using 文",
-            _ => $"文 '{Shorten(statement)}'",
+            ForStatementSyntax or ForEachStatementSyntax or WhileStatementSyntax or DoStatementSyntax => Messages.Get("UnsupportedLoop"),
+            TryStatementSyntax => Messages.Get("UnsupportedTry"),
+            UsingStatementSyntax => Messages.Get("UnsupportedUsing"),
+            _ => Messages.Get("UnsupportedStatement", Shorten(statement)),
         };
     }
 
@@ -651,7 +651,7 @@ public sealed class MethodInterpreter
         /// </summary>
         public void Consume()
         {
-            if (MaxSteps < ++_used) throw new UnsupportedSyntaxException("計算量が多すぎる（同じクラスの関数の呼び出しが多い）");
+            if (MaxSteps < ++_used) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTooManySteps"));
         }
     }
 }

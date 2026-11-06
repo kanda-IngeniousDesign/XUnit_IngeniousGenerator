@@ -66,22 +66,22 @@ public static class TestTargets
     /// <returns>対象外の理由（自動生成を試せる場合はnull）</returns>
     public static string? GetOutOfScopeReason(IMethodSymbol member)
     {
-        if (member.ContainingType.ContainingType is not null) return "入れ子のクラスは自動生成の対象外です";
+        if (member.ContainingType.ContainingType is not null) return Messages.Get("OutOfScopeNestedClass");
         if (member.ContainingType.DeclaredAccessibility != Accessibility.Public)
         {
-            return "public でないクラスは自動生成の対象外です（テストする場合は public にしてください）";
+            return Messages.Get("OutOfScopeNonPublicClass");
         }
 
-        if (member.AssociatedSymbol is IPropertySymbol { IsIndexer: true }) return "インデクサーは自動生成の対象外です";
+        if (member.AssociatedSymbol is IPropertySymbol { IsIndexer: true }) return Messages.Get("OutOfScopeIndexer");
 
         return member.MethodKind switch
         {
-            MethodKind.StaticConstructor => "静的コンストラクタは直接呼べないため対象外です",
-            MethodKind.PropertyGet => "プロパティの get は自動生成の対象外です",
-            MethodKind.UserDefinedOperator or MethodKind.Conversion => "演算子は自動生成の対象外です",
-            MethodKind.ExplicitInterfaceImplementation => "インターフェースの明示的な実装は自動生成の対象外です",
-            MethodKind.PropertySet when member.IsInitOnly => "init アクセサーはオブジェクト初期化子でしか呼べないため対象外です",
-            _ when member.DeclaredAccessibility != Accessibility.Public => "public でない関数は自動生成の対象外です",
+            MethodKind.StaticConstructor => Messages.Get("OutOfScopeStaticConstructor"),
+            MethodKind.PropertyGet => Messages.Get("OutOfScopeGetter"),
+            MethodKind.UserDefinedOperator or MethodKind.Conversion => Messages.Get("OutOfScopeOperator"),
+            MethodKind.ExplicitInterfaceImplementation => Messages.Get("OutOfScopeExplicitImplementation"),
+            MethodKind.PropertySet when member.IsInitOnly => Messages.Get("OutOfScopeInitAccessor"),
+            _ when member.DeclaredAccessibility != Accessibility.Public => Messages.Get("OutOfScopeNonPublicMember"),
             _ => null,
         };
     }

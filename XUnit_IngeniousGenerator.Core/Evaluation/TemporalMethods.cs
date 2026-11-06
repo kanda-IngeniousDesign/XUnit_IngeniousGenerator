@@ -23,7 +23,7 @@ internal static class TemporalMethods
         var type = model.GetTypeInfo(creation).Type;
         var arguments = creation.ArgumentList?.Arguments.Select(a => evaluate(a.Expression)).ToList() ?? [];
         return Run(creation, () => TemporalValues.Create(type, arguments))
-            ?? throw new UnsupportedSyntaxException($"生成 '{creation}'");
+            ?? throw new UnsupportedSyntaxException(Messages.Get("UnsupportedCreation", creation));
     }
 
     /// <summary>
@@ -50,7 +50,7 @@ internal static class TemporalMethods
                 (TemporalKind.TimeSpan, "Zero") => TimeSpan.Zero,
                 (TemporalKind.TimeSpan, "MinValue") => TimeSpan.MinValue,
                 (TemporalKind.TimeSpan, "MaxValue") => TimeSpan.MaxValue,
-                _ => throw new UnsupportedSyntaxException($"メンバー '{memberAccess}' の参照（実行するたびに値が変わるものなど）"),
+                _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNonDeterministicMember", memberAccess)),
             };
             return true;
         }
@@ -64,7 +64,7 @@ internal static class TemporalMethods
                 _ => ReadDate(date.Date, property.Name, memberAccess),
             },
             TimeSpan span => ReadSpan(span, property.Name, memberAccess),
-            _ => throw new UnsupportedSyntaxException($"メンバー '{memberAccess}' の参照"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMember", memberAccess)),
         };
         return true;
     }
@@ -86,7 +86,7 @@ internal static class TemporalMethods
         if (method.IsStatic)
         {
             value = Run(invocation, () => InvokeStatic(TemporalValues.KindOf(method.ContainingType), method.Name, arguments))
-                ?? throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'");
+                ?? throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", invocation.Expression));
             return true;
         }
 
@@ -94,7 +94,7 @@ internal static class TemporalMethods
 
         var target = evaluate(receiver.Expression);
         value = Run(invocation, () => InvokeInstance(target, method.Name, arguments))
-            ?? throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'");
+            ?? throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", invocation.Expression));
         return true;
     }
 
@@ -117,7 +117,7 @@ internal static class TemporalMethods
             (_, DateTime l, DateTime r) => Compare(kind, l.CompareTo(r)),
             (_, DateOnlyValue l, DateOnlyValue r) => Compare(kind, l.CompareTo(r)),
             (_, TimeSpan l, TimeSpan r) => Compare(kind, l.CompareTo(r)),
-            _ => throw new UnsupportedSyntaxException($"日付・時刻の演算 '{kind}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTemporalOperation", kind)),
         })!;
     }
 
@@ -163,7 +163,7 @@ internal static class TemporalMethods
             "Ticks" => date.Ticks,
             "Date" => date.Date,
             "TimeOfDay" => date.TimeOfDay,
-            _ => throw new UnsupportedSyntaxException($"メンバー '{site}' の参照"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMember", site)),
         };
     }
 
@@ -190,7 +190,7 @@ internal static class TemporalMethods
             "TotalMinutes" => span.TotalMinutes,
             "TotalSeconds" => span.TotalSeconds,
             "TotalMilliseconds" => span.TotalMilliseconds,
-            _ => throw new UnsupportedSyntaxException($"メンバー '{site}' の参照"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMember", site)),
         };
     }
 
@@ -265,7 +265,7 @@ internal static class TemporalMethods
             SyntaxKind.LessThanOrEqualExpression => comparison <= 0,
             SyntaxKind.GreaterThanExpression => 0 < comparison,
             SyntaxKind.GreaterThanOrEqualExpression => 0 <= comparison,
-            _ => throw new UnsupportedSyntaxException($"日付・時刻の演算 '{kind}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTemporalOperation", kind)),
         };
     }
 
@@ -276,7 +276,7 @@ internal static class TemporalMethods
     /// <returns>int の値</returns>
     private static int ToInt(object? value)
     {
-        return value is int i ? i : throw new UnsupportedSyntaxException("int 以外の引数");
+        return value is int i ? i : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNonIntArgument"));
     }
 
     /// <summary>
@@ -288,6 +288,6 @@ internal static class TemporalMethods
     {
         return ClrOperations.IsNumber(value)
             ? System.Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture)
-            : throw new UnsupportedSyntaxException("数値以外の引数");
+            : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNonNumericArgument"));
     }
 }

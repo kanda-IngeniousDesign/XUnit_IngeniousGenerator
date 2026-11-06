@@ -10,4 +10,10 @@
   <data name="TEST001_MemberMessage"><value>'{0}' has no tests in {1}. Add the generated tests with the Quick Fix.</value></data>
   <data name="TEST002_Title"><value>Make untestable members explicit</value></data>
   <data name="TEST002_Message"><value>Tests for '{0}' cannot be generated automatically ({1}). Add it to the not-tested list (a skipped test) with the Quick Fix, or ignore this warning.</value></data>
+  <data name="Fix_CreateTestProject"><value>Fix : Create the test project ({0}) and generate test code</value></data>
+  <data name="Fix_AddToNotTestedList"><value>Fix : Add to the not-tested list (skipped tests) in {0}</value></data>
+  <data name="Fix_GenerateTests"><value>Fix : Generate test code in {0}</value></data>
+  <data name="Fix_AddMemberTests"><value>Fix : Add test code for this member to {0}</value></data>
+  <data name="Ignore_NotGeneratable"><value>Ignore : Ignore the warning for tests that cannot be generated (checked another way)</value></data>
+  <data name="Ignore_MissingTest"><value>Ignore : Ignore the missing test code check</value></data>
 </root>

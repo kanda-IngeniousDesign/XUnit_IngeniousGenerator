@@ -53,7 +53,7 @@ internal static class StringMethods
                 ("EndsWith", "string,System.StringComparison") =>
                     text.EndsWith((string)evaluate(arguments[0].Expression)!, GetOrdinalComparison(arguments[1], model)),
                 ("Equals", "string?") or ("Equals", "string") => string.Equals(text, (string?)evaluate(arguments[0].Expression), StringComparison.Ordinal),
-                _ => throw new UnsupportedSyntaxException($"メソッド呼び出し '{invocation.Expression}'"),
+                _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", invocation.Expression)),
             };
         }
         catch (ArgumentException ex)
@@ -70,7 +70,7 @@ internal static class StringMethods
     /// <returns>幅</returns>
     private static int CheckWidth(int width)
     {
-        return width <= MaxResultLength ? width : throw new UnsupportedSyntaxException($"長すぎる文字列（幅 {width}）");
+        return width <= MaxResultLength ? width : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedLongString", width));
     }
 
     /// <summary>
@@ -87,6 +87,6 @@ internal static class StringMethods
             return (StringComparison)value;
         }
 
-        throw new UnsupportedSyntaxException("カルチャに依存する文字列の比較");
+        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedCultureComparison"));
     }
 }

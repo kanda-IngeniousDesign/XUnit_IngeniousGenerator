@@ -43,12 +43,12 @@ public class MissingTestFix : CodeFixProvider
         if (diagnostic.Id == MissingTest.NotGeneratableDiagnosticId)
         {
             await RegisterGenerateAsync(context, declaration).ConfigureAwait(false);
-            RegisterIgnore(context, declaration, MissingTest.NotGeneratableDiagnosticId, "Ignore : 自動生成できないテストの警告を無視する（別の方法で確認済み）");
+            RegisterIgnore(context, declaration, MissingTest.NotGeneratableDiagnosticId, Resources.Get("Ignore_NotGeneratable"));
             return;
         }
 
         await RegisterGenerateAsync(context, declaration).ConfigureAwait(false);
-        RegisterIgnore(context, declaration, MissingTest.DiagnosticId, "Ignore : テストコードの存在チェックを無視する");
+        RegisterIgnore(context, declaration, MissingTest.DiagnosticId, Resources.Get("Ignore_MissingTest"));
     }
 
     /// <summary>
@@ -104,8 +104,8 @@ public class MissingTestFix : CodeFixProvider
     /// <returns>タイトル</returns>
     private static string GetGenerateTitle(string diagnosticId, ISymbol? onlyMember, string testProjectName)
     {
-        if (diagnosticId == MissingTest.NotGeneratableDiagnosticId) return $"Fix : テストしていない一覧（スキップのテスト）に載せる（{testProjectName}）";
-        return onlyMember is null ? $"Fix : テストコードを生成する（{testProjectName}）" : $"Fix : この関数のテストコードを追加する（{testProjectName}）";
+        if (diagnosticId == MissingTest.NotGeneratableDiagnosticId) return Resources.Get("Fix_AddToNotTestedList", testProjectName);
+        return onlyMember is null ? Resources.Get("Fix_GenerateTests", testProjectName) : Resources.Get("Fix_AddMemberTests", testProjectName);
     }
 
     /// <summary>

@@ -294,7 +294,7 @@ public static class TemporalValues
             TimeSpan span when span == TimeSpan.Zero => StaticMember(typeName, "Zero"),
             TimeSpan span when span.Ticks % TimeSpan.TicksPerSecond != 0 => FromTicks(span.Ticks),
             TimeSpan span => New(typeName, [span.Days, span.Hours, span.Minutes, span.Seconds]),
-            _ => throw new ArgumentException($"未対応の値の型です: {value.GetType()}", nameof(value)),
+            _ => throw new ArgumentException($"Unsupported value type: {value.GetType()}", nameof(value)),
         };
     }
 

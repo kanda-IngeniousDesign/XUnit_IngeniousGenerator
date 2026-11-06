@@ -9,7 +9,7 @@ dotnet_diagnostic.TEST001.severity = none
 dotnet_diagnostic.TEST002.severity = none
 ```
 
-Every member with logic in a class ends up in the test project either as tests or as a **skipped test that lists it as not tested**, with the reason (`[Fact(Skip = "未テスト: ...")] public void Load_NotTested() { }`). After a test run, Test Explorer (and `dotnet test`) shows the members that are not tested next to the passed and failed tests.
+Every member with logic in a class ends up in the test project either as tests or as a **skipped test that lists it as not tested**, with the reason (`[Fact(Skip = "Not tested: ...")] public void Load_NotTested() { }`). Reasons and Quick Fix titles follow the display language of the IDE (Japanese, or English otherwise). After a test run, Test Explorer (and `dotnet test`) shows the members that are not tested next to the passed and failed tests.
 
 - **TEST001** is reported when the Quick Fix can add something to the test project. If the class has no test file (`XxxTests.cs`), it is reported on the class name, and the Quick Fix creates the test file with the generated tests and the skipped tests (creating the test project if needed and adding it to the solution). If the test file exists, it is reported on each member whose tests can be generated but are missing, and the Quick Fix adds the tests for that member only (replacing its skipped test, if any).
 - **TEST002** is reported on members whose tests cannot be generated and that are not yet in the list, with the reason. The Quick Fix adds the skipped test (`MemberName_NotTested`) to the list, or inserts `// Ignore TEST002`.
@@ -34,7 +34,7 @@ C#のコードから、xUnitのテストコードをRoslynだけで決定的に�
 
 テスト対象のプロジェクトに `XUnit_IngeniousGenerator` パッケージを追加してください。このパッケージを入れること自体がテスト生成を使う意思表示なので、2つのルールはどちらも**既定で有効**です。止めたい場合は、`.editorconfig` で上記のように重大度を `none` にしてください。無効の間は解析もしません。
 
-クラスの中の処理を持つ関数は、すべてテストプロジェクトに「テスト」か「**テストしていない一覧（スキップのテスト）**」のどちらかとして、理由つきで載ります（`[Fact(Skip = "未テスト: ...")] public void Load_NotTested() { }`）。テストを実行すると、テストエクスプローラー（と `dotnet test`）に、合格・失敗と並んでテストしていない関数が表示されます。
+クラスの中の処理を持つ関数は、すべてテストプロジェクトに「テスト」か「**テストしていない一覧（スキップのテスト）**」のどちらかとして、理由つきで載ります（`[Fact(Skip = "未テスト: ...")] public void Load_NotTested() { }`）。理由とクイックフィックスのタイトルは、IDE の表示言語に合わせて日本語か英語で書かれます。テストを実行すると、テストエクスプローラー（と `dotnet test`）に、合格・失敗と並んでテストしていない関数が表示されます。
 
 - **TEST001** は、クイックフィックスでテストプロジェクトに追加できるものがあるときに報告します。テストファイル（`XxxTests.cs`）がなければクラス名に報告し、クイックフィックスで、生成したテストとスキップのテストをまとめたテストファイルを作ります（テストプロジェクトがなければ作成し、ソリューションにも追加します）。テストファイルがあれば、テストを生成できるのにまだない関数に報告し、クイックフィックスでその関数のテストだけを追加します（スキップのテストがあれば置き換えます）。
 - **TEST002** は、テストを生成できず、まだ一覧に載っていない関数に、理由とともに報告します。クイックフィックスで一覧にスキップのテスト（`関数名_NotTested`）を追加するか、`// Ignore TEST002` を挿入します。

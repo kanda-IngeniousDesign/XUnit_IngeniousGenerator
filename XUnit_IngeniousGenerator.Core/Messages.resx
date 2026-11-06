@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AbstractConstructor" xml:space="preserve">
+    <value>Constructors of abstract classes cannot be called directly</value>
+  </data>
+  <data name="AsyncVoid" xml:space="preserve">
+    <value>async void methods are not supported because their exceptions cannot be caught</value>
+  </data>
+  <data name="CannotCreateArgument" xml:space="preserve">
+    <value>Cannot create a value for parameter {0}{1}</value>
+  </data>
+  <data name="DuplicateTestName" xml:space="preserve">
+    <value>Not generated because the test name {0} is already used</value>
+  </data>
+  <data name="ExternalDependencyNoThrowOnly" xml:space="preserve">
+    <value>{0}, so only the absence of exceptions is checked, not the return value</value>
+  </data>
+  <data name="ExternalDependencyNotTested" xml:space="preserve">
+    <value>{0}, so it is not covered by unit tests (check it in UI tests)</value>
+  </data>
+  <data name="ExternalMember" xml:space="preserve">
+    <value>'{0}' depends on the external environment (files, databases, network)</value>
+  </data>
+  <data name="GenericMethod" xml:space="preserve">
+    <value>Generic methods are not supported because the type arguments cannot be chosen</value>
+  </data>
+  <data name="Iterator" xml:space="preserve">
+    <value>Iterators (yield) are not supported because they do not run until enumerated</value>
+  </data>
+  <data name="KindNoThrow" xml:space="preserve">
+    <value>No-exception check</value>
+  </data>
+  <data name="KindReturnValue" xml:space="preserve">
+    <value>Return value test</value>
+  </data>
+  <data name="MoqHint" xml:space="preserve">
+    <value>. Add Moq to the test project to mock interface dependencies automatically</value>
+  </data>
+  <data name="NoTestToGenerate" xml:space="preserve">
+    <value>There is no test to generate (no leading guards and no return value)</value>
+  </data>
+  <data name="NoValidValue" xml:space="preserve">
+    <value>No valid value for parameter {0} can be chosen, so the {2} test for {1} is skipped</value>
+  </data>
+  <data name="NonDeterministicMember" xml:space="preserve">
+    <value>'{0}' returns a different result every run</value>
+  </data>
+  <data name="NotTestedPrefix" xml:space="preserve">
+    <value>Not tested: </value>
+  </data>
+  <data name="OutOfScopeExplicitImplementation" xml:space="preserve">
+    <value>Explicit interface implementations are not generated automatically</value>
+  </data>
+  <data name="OutOfScopeGenericClass" xml:space="preserve">
+    <value>Generic classes are not supported because the type arguments cannot be chosen</value>
+  </data>
+  <data name="OutOfScopeGetter" xml:space="preserve">
+    <value>Property getters are not generated automatically</value>
+  </data>
+  <data name="OutOfScopeIndexer" xml:space="preserve">
+    <value>Indexers are not generated automatically</value>
+  </data>
+  <data name="OutOfScopeInitAccessor" xml:space="preserve">
+    <value>init accessors can only be called from an object initializer</value>
+  </data>
+  <data name="OutOfScopeNestedClass" xml:space="preserve">
+    <value>Members of nested classes are not generated automatically</value>
+  </data>
+  <data name="OutOfScopeNonPublicClass" xml:space="preserve">
+    <value>Members of non-public classes are not generated automatically (make the class public to test it)</value>
+  </data>
+  <data name="OutOfScopeNonPublicMember" xml:space="preserve">
+    <value>Non-public members are not generated automatically</value>
+  </data>
+  <data name="OutOfScopeOperator" xml:space="preserve">
+    <value>Operators are not generated automatically</value>
+  </data>
+  <data name="OutOfScopeStaticConstructor" xml:space="preserve">
+    <value>Static constructors cannot be called directly</value>
+  </data>
+  <data name="ParameterTypeNotComputable" xml:space="preserve">
+    <value>parameter {0} has type {1}, which cannot be computed</value>
+  </data>
+  <data name="RefParameters" xml:space="preserve">
+    <value>Methods with ref / out / in parameters are not supported</value>
+  </data>
+  <data name="ReturnNotComputable" xml:space="preserve">
+    <value>The return value cannot be computed statically ({0}). Add Verify.Xunit to the test project to generate tests that record the actual results</value>
+  </data>
+  <data name="ReturnType" xml:space="preserve">
+    <value>return type {0}</value>
+  </data>
+  <data name="ReturnsNaN" xml:space="preserve">
+    <value>some inputs return NaN or infinity</value>
+  </data>
+  <data name="ReturnsNull" xml:space="preserve">
+    <value>some inputs return null</value>
+  </data>
+  <data name="ScaffoldCannotStartDotnet" xml:space="preserve">
+    <value>Could not start dotnet. Add the test project to your solution manually</value>
+  </data>
+  <data name="ScaffoldDotnetNotFound" xml:space="preserve">
+    <value>dotnet was not found. Add the test project to your solution manually</value>
+  </data>
+  <data name="ScaffoldNoSolution" xml:space="preserve">
+    <value>No solution was found. Add the test project to your solution manually</value>
+  </data>
+  <data name="ScaffoldProjectExists" xml:space="preserve">
+    <value>{0} already exists</value>
+  </data>
+  <data name="ScaffoldSlnAddFailed" xml:space="preserve">
+    <value>Could not add the test project to the solution: {0}</value>
+  </data>
+  <data name="ScaffoldSlnAddTimeout" xml:space="preserve">
+    <value>dotnet sln add did not finish in time. Check that the test project was added to your solution</value>
+  </data>
+  <data name="SutAbstractClass" xml:space="preserve">
+    <value>an abstract class needs a concrete subclass</value>
+  </data>
+  <data name="SutBlocked" xml:space="preserve">
+    <value>The instance under test cannot be created ({0})</value>
+  </data>
+  <data name="SutNoConstructor" xml:space="preserve">
+    <value>there is no public constructor whose guards can be passed</value>
+  </data>
+  <data name="SutNullArguments" xml:space="preserve">
+    <value>Parameters {0} cannot be created, so null is passed to create the instance under test (tests of code that uses them will throw)</value>
+  </data>
+  <data name="SutStaticClass" xml:space="preserve">
+    <value>it is a static class</value>
+  </data>
+  <data name="UnreachableGuard" xml:space="preserve">
+    <value>The condition '{0}' cannot be analyzed and no input that throws was found, so this guard is skipped</value>
+  </data>
+  <data name="UnreachableLaterThrows" xml:space="preserve">
+    <value>{0} throw(s) after the guards are skipped because no input that reaches them was found</value>
+  </data>
+  <data name="UnrecognizedGuard" xml:space="preserve">
+    <value>The condition '{0}' cannot be analyzed, so the guards from here on are skipped</value>
+  </data>
+  <data name="UnsupportedComparison" xml:space="preserve">
+    <value>comparison of '{0}'</value>
+  </data>
+  <data name="UnsupportedConversion" xml:space="preserve">
+    <value>conversion to type '{0}'</value>
+  </data>
+  <data name="UnsupportedConversionFromTo" xml:space="preserve">
+    <value>conversion from '{0}' to {1}</value>
+  </data>
+  <data name="UnsupportedCreation" xml:space="preserve">
+    <value>object creation '{0}'</value>
+  </data>
+  <data name="UnsupportedCultureComparison" xml:space="preserve">
+    <value>culture-dependent string comparison</value>
+  </data>
+  <data name="UnsupportedCultureConcat" xml:space="preserve">
+    <value>culture-dependent string conversion (concatenating double / decimal)</value>
+  </data>
+  <data name="UnsupportedDecimalComparison" xml:space="preserve">
+    <value>comparison of a number that does not fit in decimal</value>
+  </data>
+  <data name="UnsupportedDeepCall" xml:space="preserve">
+    <value>deeply nested call '{0}'</value>
+  </data>
+  <data name="UnsupportedExpression" xml:space="preserve">
+    <value>expression '{0}'</value>
+  </data>
+  <data name="UnsupportedExpressionStatement" xml:space="preserve">
+    <value>expression statement '{0}'</value>
+  </data>
+  <data name="UnsupportedFieldAssignment" xml:space="preserve">
+    <value>assignment to a field or property '{0}'</value>
+  </data>
+  <data name="UnsupportedFieldReference" xml:space="preserve">
+    <value>reference to field or property '{0}'</value>
+  </data>
+  <data name="UnsupportedInterpolation" xml:space="preserve">
+    <value>string interpolation (culture-dependent)</value>
+  </data>
+  <data name="UnsupportedLocal" xml:space="preserve">
+    <value>local variable '{0}'</value>
+  </data>
+  <data name="UnsupportedLongString" xml:space="preserve">
+    <value>string too long (width {0})</value>
+  </data>
+  <data name="UnsupportedLoop" xml:space="preserve">
+    <value>loop</value>
+  </data>
+  <data name="UnsupportedMathAbs" xml:space="preserve">
+    <value>argument type of Math.Abs</value>
+  </data>
+  <data name="UnsupportedMathRounding" xml:space="preserve">
+    <value>argument type of Math rounding</value>
+  </data>
+  <data name="UnsupportedMember" xml:space="preserve">
+    <value>reference to member '{0}'</value>
+  </data>
+  <data name="UnsupportedMethodCall" xml:space="preserve">
+    <value>method call '{0}'</value>
+  </data>
+  <data name="UnsupportedNoBody" xml:space="preserve">
+    <value>no body</value>
+  </data>
+  <data name="UnsupportedNoReturnPath" xml:space="preserve">
+    <value>a path ends without returning a value</value>
+  </data>
+  <data name="UnsupportedNoReturnPathIn" xml:space="preserve">
+    <value>path that ends without returning a value in '{0}'</value>
+  </data>
+  <data name="UnsupportedNonBoolCondition" xml:space="preserve">
+    <value>non-bool condition</value>
+  </data>
+  <data name="UnsupportedNonConstantCase" xml:space="preserve">
+    <value>non-constant case '{0}'</value>
+  </data>
+  <data name="UnsupportedNonConstantPattern" xml:space="preserve">
+    <value>non-constant pattern '{0}'</value>
+  </data>
+  <data name="UnsupportedNonDeterministicMember" xml:space="preserve">
+    <value>reference to member '{0}' (such as a value that changes every run)</value>
+  </data>
+  <data name="UnsupportedNonIntArgument" xml:space="preserve">
+    <value>non-int argument</value>
+  </data>
+  <data name="UnsupportedNonNumericArgument" xml:space="preserve">
+    <value>non-numeric argument</value>
+  </data>
+  <data name="UnsupportedNonNumericComparison" xml:space="preserve">
+    <value>comparison of values other than numbers and dates</value>
+  </data>
+  <data name="UnsupportedNullConversion" xml:space="preserve">
+    <value>conversion from null to '{0}'</value>
+  </data>
+  <data name="UnsupportedOperation" xml:space="preserve">
+    <value>operation '{0}'</value>
+  </data>
+  <data name="UnsupportedOperator" xml:space="preserve">
+    <value>operator '{0}' (such as a user-defined operator)</value>
+  </data>
+  <data name="UnsupportedPattern" xml:space="preserve">
+    <value>pattern '{0}'</value>
+  </data>
+  <data name="UnsupportedRecursion" xml:space="preserve">
+    <value>recursive call '{0}'</value>
+  </data>
+  <data name="UnsupportedStatement" xml:space="preserve">
+    <value>statement '{0}'</value>
+  </data>
+  <data name="UnsupportedSwitchExpressionWhen" xml:space="preserve">
+    <value>when clause in a switch expression</value>
+  </data>
+  <data name="UnsupportedSwitchStatementWhen" xml:space="preserve">
+    <value>when clause in a switch statement</value>
+  </data>
+  <data name="UnsupportedTemporalOperation" xml:space="preserve">
+    <value>date/time operation '{0}'</value>
+  </data>
+  <data name="UnsupportedTooManySteps" xml:space="preserve">
+    <value>too much computation (many calls to methods of the same class)</value>
+  </data>
+  <data name="UnsupportedTry" xml:space="preserve">
+    <value>try statement</value>
+  </data>
+  <data name="UnsupportedTypeOperation" xml:space="preserve">
+    <value>operation on type '{0}'</value>
+  </data>
+  <data name="UnsupportedUnary" xml:space="preserve">
+    <value>unary operation '{0}'</value>
+  </data>
+  <data name="UnsupportedUninitializedLocal" xml:space="preserve">
+    <value>local variable without an initializer '{0}'</value>
+  </data>
+  <data name="UnsupportedUsing" xml:space="preserve">
+    <value>using statement</value>
+  </data>
+</root>

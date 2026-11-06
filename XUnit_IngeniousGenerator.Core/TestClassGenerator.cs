@@ -82,7 +82,7 @@ public static class TestClassGenerator
             foreach (var test in plan.Tests)
             {
                 if (names.Add(test.TestName)) tests.Add(test);
-                else reasons.Add($"テスト名 {test.TestName} が重複するため生成していません");
+                else reasons.Add(Messages.Get("DuplicateTestName", test.TestName));
             }
 
             if (0 < reasons.Count && names.Add(TestTargets.GetBaseName(member) + TestTargets.NotTestedSuffix))

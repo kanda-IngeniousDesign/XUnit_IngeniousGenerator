@@ -22,7 +22,7 @@ internal static class ClrOperations
         if (target.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T) return Convert(value, ((INamedTypeSymbol)target).TypeArguments[0]);
         if (value is null)
         {
-            return target.IsReferenceType ? null : throw new UnsupportedSyntaxException($"null から '{target}' への変換");
+            return target.IsReferenceType ? null : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNullConversion", target));
         }
 
         if (TemporalValues.KindOf(target) != TemporalKind.None && TemporalValues.IsTemporal(value)) return value;
@@ -37,7 +37,7 @@ internal static class ClrOperations
             SpecialType.System_Double => ToDouble(value),
             SpecialType.System_Decimal => ToDecimal(value),
             SpecialType.System_Boolean or SpecialType.System_String or SpecialType.System_Char when value.GetType() == ToClrType(target.SpecialType) => value,
-            _ => throw new UnsupportedSyntaxException($"型 '{target}' への変換"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedConversion", target)),
         };
     }
 
@@ -64,7 +64,7 @@ internal static class ClrOperations
             SpecialType.System_String => StringBinary(kind, left, right),
             // string + object（"a" + 1 など）の連結だけを扱い、object どうしの参照比較は対象外にする
             SpecialType.System_Object when kind is SyntaxKind.AddExpression or SyntaxKind.AddAssignmentExpression => StringBinary(kind, left, right),
-            _ => throw new UnsupportedSyntaxException($"型 '{operandType}' の演算"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTypeOperation", operandType)),
         };
     }
 
@@ -85,7 +85,7 @@ internal static class ClrOperations
             (SyntaxKind.UnaryMinusExpression, double d) => -d,
             (SyntaxKind.UnaryMinusExpression, decimal m) => -m,
             (SyntaxKind.UnaryMinusExpression, TimeSpan t) => -t,
-            _ => throw new UnsupportedSyntaxException($"単項演算 '{kind}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedUnary", kind)),
         };
     }
 
@@ -113,7 +113,7 @@ internal static class ClrOperations
         if (TemporalValues.IsTemporal(value)) return value.Equals(constant);
         return value is string or bool or char
             ? value.Equals(constant)
-            : throw new UnsupportedSyntaxException($"'{value.GetType().Name}' の比較");
+            : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedComparison", value.GetType().Name));
     }
 
     /// <summary>
@@ -189,7 +189,7 @@ internal static class ClrOperations
             SyntaxKind.LessThanOrEqualExpression => l <= r,
             SyntaxKind.GreaterThanExpression => r < l,
             SyntaxKind.GreaterThanOrEqualExpression => r <= l,
-            _ => throw new UnsupportedSyntaxException($"演算 '{kind}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedOperation", kind)),
         };
     }
 
@@ -229,7 +229,7 @@ internal static class ClrOperations
             SyntaxKind.BitwiseAndExpression => l & r,
             SyntaxKind.BitwiseOrExpression => l | r,
             SyntaxKind.ExclusiveOrExpression => l ^ r,
-            _ => throw new UnsupportedSyntaxException($"演算 '{kind}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedOperation", kind)),
         };
     }
 
@@ -247,7 +247,7 @@ internal static class ClrOperations
             SyntaxKind.AddExpression or SyntaxKind.AddAssignmentExpression => ToConcatString(l) + ToConcatString(r),
             SyntaxKind.EqualsExpression => string.Equals(l as string, r as string, StringComparison.Ordinal),
             SyntaxKind.NotEqualsExpression => !string.Equals(l as string, r as string, StringComparison.Ordinal),
-            _ => throw new UnsupportedSyntaxException($"演算 '{kind}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedOperation", kind)),
         };
     }
 
@@ -267,7 +267,7 @@ internal static class ClrOperations
             SyntaxKind.LessThanOrEqualExpression => comparison <= 0,
             SyntaxKind.GreaterThanExpression => 0 < comparison,
             SyntaxKind.GreaterThanOrEqualExpression => 0 <= comparison,
-            _ => throw new UnsupportedSyntaxException($"演算 '{kind}'"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedOperation", kind)),
         };
     }
 
@@ -285,7 +285,7 @@ internal static class ClrOperations
             char c => c.ToString(),
             bool b => b ? "True" : "False",
             int or long => System.Convert.ToString(value, CultureInfo.InvariantCulture)!,
-            _ => throw new UnsupportedSyntaxException("カルチャに依存する文字列変換（double / decimal の連結）"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedCultureConcat")),
         };
     }
 
@@ -303,7 +303,7 @@ internal static class ClrOperations
             double d => unchecked((int)d),
             decimal m => (int)m,
             char c => (int)c,
-            _ => throw new UnsupportedSyntaxException($"'{value.GetType().Name}' から int への変換"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedConversionFromTo", value.GetType().Name, "int")),
         };
     }
 
@@ -321,7 +321,7 @@ internal static class ClrOperations
             double d => unchecked((long)d),
             decimal m => (long)m,
             char c => (long)c,
-            _ => throw new UnsupportedSyntaxException($"'{value.GetType().Name}' から long への変換"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedConversionFromTo", value.GetType().Name, "long")),
         };
     }
 
@@ -338,7 +338,7 @@ internal static class ClrOperations
             long l => (double)l,
             double d => d,
             decimal m => (double)m,
-            _ => throw new UnsupportedSyntaxException($"'{value.GetType().Name}' から double への変換"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedConversionFromTo", value.GetType().Name, "double")),
         };
     }
 
@@ -355,7 +355,7 @@ internal static class ClrOperations
             long l => (decimal)l,
             double d => (decimal)d,
             decimal m => m,
-            _ => throw new UnsupportedSyntaxException($"'{value.GetType().Name}' から decimal への変換"),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedConversionFromTo", value.GetType().Name, "decimal")),
         };
     }
 
@@ -372,7 +372,7 @@ internal static class ClrOperations
         }
         catch (OverflowException)
         {
-            throw new UnsupportedSyntaxException("decimal に収まらない数値の比較");
+            throw new UnsupportedSyntaxException(Messages.Get("UnsupportedDecimalComparison"));
         }
     }
 

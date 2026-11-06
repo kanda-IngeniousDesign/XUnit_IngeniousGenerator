@@ -51,7 +51,7 @@ internal sealed class ReturnValueTestPlanner
         var dependency = ExternalDependencyDetector.Find(declaration, model);
         if (dependency is { NonDeterministic: false })
         {
-            _context.NotGeneratableItems.Add($"{display}: {dependency.Value.Reason}、単体テストでは担保しません（UIオーケストレーター側で確認）");
+            _context.NotGeneratableItems.Add($"{display}: {Messages.Get("ExternalDependencyNotTested", dependency.Value.Reason)}");
             return null;
         }
 
@@ -62,15 +62,15 @@ internal sealed class ReturnValueTestPlanner
             construct: _context.Constructor.CreateDependency);
         if (inputs is null)
         {
-            var hint = _context.Options.UseMoq ? string.Empty : "。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします";
-            return Manual(display, $"引数 {failedParameter!.Name} の値を作れません{hint}", checksOnlyNoThrow);
+            var hint = _context.Options.UseMoq ? string.Empty : Messages.Get("MoqHint");
+            return Manual(display, Messages.Get("CannotCreateArgument", failedParameter!.Name, hint), checksOnlyNoThrow);
         }
 
         if (checksOnlyNoThrow)
         {
             if (dependency is not null)
             {
-                _context.NotGeneratableItems.Add($"{display}: {dependency.Value.Reason}、戻り値は確認せず、例外が出ないことだけを確認します");
+                _context.NotGeneratableItems.Add($"{display}: {Messages.Get("ExternalDependencyNoThrowOnly", dependency.Value.Reason)}");
             }
 
             var suffix = inputs.DataParameters.Count == 0 ? "_DefaultInputs_DoesNotThrow" : "_BoundaryValues_DoesNotThrow";
@@ -86,7 +86,7 @@ internal sealed class ReturnValueTestPlanner
 
         if (!_context.Options.UseVerify)
         {
-            return Manual(display, $"戻り値を静的に計算できません（{reason}）。テストプロジェクトに Verify.Xunit を追加すると、実行結果を記録するテストを生成します");
+            return Manual(display, Messages.Get("ReturnNotComputable", reason));
         }
 
         var testName = inputs.DataParameters.Count == 0
@@ -106,16 +106,16 @@ internal sealed class ReturnValueTestPlanner
         var structured = inputs.DataParameters.FirstOrDefault(p => !IsSupportedType(p.Type));
         if (structured is not null)
         {
-            return $"引数 {structured.Name} の型 {structured.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)} は計算の対象外";
+            return Messages.Get("ParameterTypeNotComputable", structured.Name, structured.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
         }
 
         if (0 < inputs.FixedValues.Count)
         {
             var parameter = inputs.FixedValues.Keys.First();
-            return $"引数 {parameter.Name} の型 {parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)} は計算の対象外";
+            return Messages.Get("ParameterTypeNotComputable", parameter.Name, parameter.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
         }
 
-        if (!IsSupportedType(member.ReturnType)) return $"戻り値の型 {member.ReturnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}";
+        if (!IsSupportedType(member.ReturnType)) return Messages.Get("ReturnType", member.ReturnType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
         return null;
     }
 
@@ -138,8 +138,8 @@ internal sealed class ReturnValueTestPlanner
             reason = result switch
             {
                 { Kind: EvaluationKind.Unsupported } => result.Reason,
-                { Kind: EvaluationKind.Returned, Value: null } => "null を返す入力があります",
-                { Kind: EvaluationKind.Returned, Value: double d } when double.IsNaN(d) || double.IsInfinity(d) => "NaN または無限大を返す入力があります",
+                { Kind: EvaluationKind.Returned, Value: null } => Messages.Get("ReturnsNull"),
+                { Kind: EvaluationKind.Returned, Value: double d } when double.IsNaN(d) || double.IsInfinity(d) => Messages.Get("ReturnsNaN"),
                 _ => null,
             };
             if (reason is not null) return null;
@@ -172,7 +172,7 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>常にnull</returns>
     private PlannedTest? Manual(string display, string reason, bool checksOnlyNoThrow = false)
     {
-        var kind = checksOnlyNoThrow ? "例外が出ないことの確認" : "戻り値テスト";
+        var kind = checksOnlyNoThrow ? Messages.Get("KindNoThrow") : Messages.Get("KindReturnValue");
         _context.ManualItems.Add($"{display}: {kind}: {reason}");
         return null;
     }

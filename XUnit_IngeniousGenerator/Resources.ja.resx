@@ -10,4 +10,10 @@
   <data name="TEST001_MemberMessage"><value>'{0}' のテストが {1} にありません。クイックフィックスでテストコードを追加してください。</value></data>
   <data name="TEST002_Title"><value>自動生成できないテストの明示</value></data>
   <data name="TEST002_Message"><value>'{0}' のテストコードは自動生成できません（{1}）。クイックフィックスでテストしていない一覧（スキップのテスト）に載せるか、警告を Ignore してください。</value></data>
+  <data name="Fix_CreateTestProject"><value>Fix : テストプロジェクト（{0}）を作成してテストコードを生成する</value></data>
+  <data name="Fix_AddToNotTestedList"><value>Fix : テストしていない一覧（スキップのテスト）に載せる（{0}）</value></data>
+  <data name="Fix_GenerateTests"><value>Fix : テストコードを生成する（{0}）</value></data>
+  <data name="Fix_AddMemberTests"><value>Fix : この関数のテストコードを追加する（{0}）</value></data>
+  <data name="Ignore_NotGeneratable"><value>Ignore : 自動生成できないテストの警告を無視する（別の方法で確認済み）</value></data>
+  <data name="Ignore_MissingTest"><value>Ignore : テストコードの存在チェックを無視する</value></data>
 </root>

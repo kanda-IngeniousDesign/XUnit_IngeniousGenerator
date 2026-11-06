@@ -33,8 +33,8 @@ internal sealed class SutPlan
     /// <returns>Sutの作り方</returns>
     public static SutPlan Create(INamedTypeSymbol targetType, GenerationContext context)
     {
-        if (targetType.IsStatic) return Blocked("staticクラスのため");
-        if (targetType.IsAbstract) return Blocked("抽象クラスは具象サブクラスが必要なため");
+        if (targetType.IsStatic) return Blocked(Messages.Get("SutStaticClass"));
+        if (targetType.IsAbstract) return Blocked(Messages.Get("SutAbstractClass"));
 
         // null の依存で作ると、それを使う処理が NullReferenceException になるため、null を渡さずに作れる方法を優先する
         var solved = context.Constructor.Solve(targetType, allowNull: false);
@@ -46,13 +46,13 @@ internal sealed class SutPlan
             var nullParameters = solved.Value.Constructor.Parameters
                 .Where((p, i) => solved.Value.Arguments[i].Value.Kind == TestValueKind.Null && p.NullableAnnotation != NullableAnnotation.Annotated)
                 .Select(p => p.Name);
-            context.ManualItems.Add($"{targetType.Name}: 引数 {string.Join(", ", nullParameters)} を作れないため null を渡してテスト対象を生成しています（それを使う処理のテストは例外になります）");
+            context.ManualItems.Add($"{targetType.Name}: {Messages.Get("SutNullArguments", string.Join(", ", nullParameters))}");
             return new SutPlan(solved.Value.Constructor, solved.Value.Arguments, null);
         }
 
         return Blocked(context.Options.UseMoq
-            ? "ガードを通過する引数を決められるpublicコンストラクタがないため"
-            : "ガードを通過する引数を決められるpublicコンストラクタがないため。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします");
+            ? Messages.Get("SutNoConstructor")
+            : Messages.Get("SutNoConstructor") + Messages.Get("MoqHint"));
     }
 
     /// <summary>
