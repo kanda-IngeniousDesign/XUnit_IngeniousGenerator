@@ -285,4 +285,7 @@
   <data name="UnsupportedUsing" xml:space="preserve">
     <value>using 文</value>
   </data>
+  <data name="UnsupportedTooDeep" xml:space="preserve">
+    <value>入れ子が深すぎる（式・呼び出し）</value>
+  </data>
 </root>

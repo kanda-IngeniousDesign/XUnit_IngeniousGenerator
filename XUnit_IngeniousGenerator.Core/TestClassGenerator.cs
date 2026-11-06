@@ -25,6 +25,19 @@ public static class TestClassGenerator
     /// <returns>生成結果</returns>
     public static GenerationResult Generate(INamedTypeSymbol targetType, Compilation compilation, string? testNamespace, GenerationOptions? options = null)
     {
+        return LargeStack.Run(() => GenerateOnCurrentThread(targetType, compilation, testNamespace, options));
+    }
+
+    /// <summary>
+    /// テストクラスのコードを生成する（呼び出したスレッドで実行する）
+    /// </summary>
+    /// <param name="targetType">テスト対象のクラス</param>
+    /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
+    /// <param name="testNamespace">テストクラスの名前空間</param>
+    /// <param name="options">テストプロジェクトで使えるパッケージに応じた設定</param>
+    /// <returns>生成結果</returns>
+    private static GenerationResult GenerateOnCurrentThread(INamedTypeSymbol targetType, Compilation compilation, string? testNamespace, GenerationOptions? options)
+    {
         var testClassName = targetType.Name + TestClassSuffix;
         var renderer = new ValueRenderer();
         var context = new GenerationContext(compilation, options ?? GenerationOptions.None);

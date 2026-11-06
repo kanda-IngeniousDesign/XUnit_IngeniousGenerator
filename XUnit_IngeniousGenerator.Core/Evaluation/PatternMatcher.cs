@@ -28,6 +28,7 @@ internal sealed class PatternMatcher
     /// <returns>合致すればtrue</returns>
     public bool Matches(PatternSyntax pattern, object? value)
     {
+        MethodInterpreter.EnsureStack();
         return pattern switch
         {
             DiscardPatternSyntax => true,

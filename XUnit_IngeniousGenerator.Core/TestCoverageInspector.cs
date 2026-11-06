@@ -22,6 +22,20 @@ public static class TestCoverageInspector
     public static IReadOnlyList<MemberCoverage> Inspect(
         INamedTypeSymbol targetType, Compilation compilation, GenerationOptions options, IReadOnlyCollection<string> existingTestNames)
     {
+        return LargeStack.Run(() => InspectOnCurrentThread(targetType, compilation, options, existingTestNames));
+    }
+
+    /// <summary>
+    /// テスト対象のメンバーごとに、テストの状態を判定する（呼び出したスレッドで実行する）
+    /// </summary>
+    /// <param name="targetType">テスト対象のクラス</param>
+    /// <param name="compilation">テスト対象のクラスを含むコンパイル</param>
+    /// <param name="options">テストプロジェクトで使えるパッケージに応じた設定</param>
+    /// <param name="existingTestNames">既存のテストクラスのメンバー名（テストファイルがなければ空）</param>
+    /// <returns>メンバーごとのテストの状態</returns>
+    private static IReadOnlyList<MemberCoverage> InspectOnCurrentThread(
+        INamedTypeSymbol targetType, Compilation compilation, GenerationOptions options, IReadOnlyCollection<string> existingTestNames)
+    {
         var members = TestTargets.Collect(targetType);
         var baseNames = members.Select(TestTargets.GetBaseName).ToList();
         SutPlan? sut = null;

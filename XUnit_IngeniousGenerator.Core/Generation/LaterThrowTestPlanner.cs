@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Globalization;
 using XUnit_IngeniousGenerator.Core.Evaluation;
 using XUnit_IngeniousGenerator.Core.Guards;
@@ -180,8 +181,20 @@ internal sealed class LaterThrowTestPlanner
         var ifStatement = site.Parent is BlockSyntax { Statements.Count: 1 } block ? block.Parent as IfStatementSyntax : site.Parent as IfStatementSyntax;
         if (ifStatement is null || !declaration.Contains(ifStatement)) return [0];
 
-        var parts = SplitOr(ifStatement.Condition);
-        if (parts.Count < 2) return [0];
+        List<ExpressionSyntax> parts;
+        try
+        {
+            parts = SplitOr(ifStatement.Condition);
+        }
+        catch (InsufficientExecutionStackException)
+        {
+            // 「||」が深すぎる条件は分けずに、条件全体を 0 番として扱う
+            return [0];
+        }
+
+        // 条件が多すぎる場合（x == 0 || x == 1 || ... と並べたものなど）は、入力ごとに全部を評価すると重いため分けない
+        const int MaxConditions = 32;
+        if (parts.Count < 2 || MaxConditions < parts.Count) return [0];
 
         // 条件を評価できない場合は、条件全体を 0 番として扱う（入力1つでテスト1つ）
         var holding = parts.Select((part, index) => (index, value: MethodInterpreter.EvaluateCondition(declaration, model, member, row, part)))
@@ -196,6 +209,7 @@ internal sealed class LaterThrowTestPlanner
     /// <returns>分けた条件</returns>
     private static List<ExpressionSyntax> SplitOr(ExpressionSyntax condition)
     {
+        RuntimeHelpers.EnsureSufficientExecutionStack();
         return condition switch
         {
             ParenthesizedExpressionSyntax parenthesized => SplitOr(parenthesized.Expression),
