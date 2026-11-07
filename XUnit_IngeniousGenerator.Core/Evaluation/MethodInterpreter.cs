@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using XUnit_IngeniousGenerator.Core.Guards;
 using XUnit_IngeniousGenerator.Core.Values;
 using Microsoft.CodeAnalysis;
@@ -77,6 +78,14 @@ public sealed class MethodInterpreter
     }
 
     /// <summary>
+    /// 残りのスタックが少なければ評価をやめる（パターンの照合など、評価から呼ばれる再帰の処理で使う）
+    /// </summary>
+    public static void EnsureStack()
+    {
+        StepBudget.EnsureStack();
+    }
+
+    /// <summary>
     /// 引数だけを使う条件（ガードの条件の一部）を評価する
     /// </summary>
     /// <param name="declaration">メソッド・コンストラクタの宣言</param>
@@ -150,6 +159,7 @@ public sealed class MethodInterpreter
     /// <returns>実行結果</returns>
     private Flow Execute(StatementSyntax statement)
     {
+        StepBudget.EnsureStack();
         switch (statement)
         {
             case BlockSyntax block:
@@ -652,6 +662,23 @@ public sealed class MethodInterpreter
         public void Consume()
         {
             if (MaxSteps < ++_used) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTooManySteps"));
+            EnsureStack();
+        }
+
+        /// <summary>
+        /// 残りのスタックが少なければ評価をやめる（入れ子の深い式・呼び出しで、スタックオーバーフローにより IDE の解析のプロセスごと落ちないようにする。
+        /// スタックオーバーフローは例外として捕まえられないため、その手前で止める）
+        /// </summary>
+        public static void EnsureStack()
+        {
+            try
+            {
+                RuntimeHelpers.EnsureSufficientExecutionStack();
+            }
+            catch (InsufficientExecutionStackException)
+            {
+                throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTooDeep"));
+            }
         }
     }
 }

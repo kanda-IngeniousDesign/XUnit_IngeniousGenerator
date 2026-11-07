@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -20,7 +21,15 @@ internal static class ConditionParser
         ExpressionSyntax condition, SemanticModel model, IMethodSymbol member)
     {
         var results = new List<(IParameterSymbol, GuardCondition)>();
-        return TryAdd(condition, model, member, results) ? results : null;
+        try
+        {
+            return TryAdd(condition, model, member, results) ? results : null;
+        }
+        catch (InsufficientExecutionStackException)
+        {
+            // 入れ子が深すぎる条件は、解析できない条件として扱う（スタックオーバーフローで IDE の解析のプロセスごと落ちないようにする）
+            return null;
+        }
     }
 
     /// <summary>
@@ -84,6 +93,7 @@ internal static class ConditionParser
     private static bool TryAdd(
         ExpressionSyntax expression, SemanticModel model, IMethodSymbol member, List<(IParameterSymbol, GuardCondition)> results)
     {
+        RuntimeHelpers.EnsureSufficientExecutionStack();
         return expression switch
         {
             ParenthesizedExpressionSyntax parenthesized => TryAdd(parenthesized.Expression, model, member, results),
@@ -139,6 +149,7 @@ internal static class ConditionParser
     private static bool TryAddPattern(
         ExpressionSyntax subject, PatternSyntax pattern, bool negated, SemanticModel model, IMethodSymbol member, List<(IParameterSymbol, GuardCondition)> results)
     {
+        RuntimeHelpers.EnsureSufficientExecutionStack();
         switch (pattern)
         {
             case ParenthesizedPatternSyntax parenthesized:

@@ -60,7 +60,7 @@ public static class TestDocumentWriter
         }
 
         var existingText = await existing.GetTextAsync(cancellationToken).ConfigureAwait(false);
-        var merged = TestFileMerger.Merge(existingText.ToString(), result.Code);
+        var merged = LargeStack.Run(() => TestFileMerger.Merge(existingText.ToString(), result.Code));
         return merged is null ? solution : solution.WithDocumentText(existing.Id, SourceText.From(merged, existingText.Encoding));
     }
 

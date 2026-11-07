@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -93,13 +94,21 @@ public static class TestTargets
     /// <returns>処理があればtrue</returns>
     public static bool HasLogic(IMethodSymbol member)
     {
-        return GetBody(member) switch
+        try
         {
-            ArrowExpressionClauseSyntax arrow => !IsTrivialExpression(arrow.Expression),
-            BlockSyntax block => !block.Statements.All(IsTrivialStatement),
-            ConstructorDeclarationSyntax constructor => HasLogic(constructor),
-            _ => true,
-        };
+            return GetBody(member) switch
+            {
+                ArrowExpressionClauseSyntax arrow => !IsTrivialExpression(arrow.Expression),
+                BlockSyntax block => !block.Statements.All(IsTrivialStatement),
+                ConstructorDeclarationSyntax constructor => HasLogic(constructor),
+                _ => true,
+            };
+        }
+        catch (InsufficientExecutionStackException)
+        {
+            // 入れ子が深すぎる式（a = b = c = ... など）は、処理があるものとして扱う
+            return true;
+        }
     }
 
     /// <summary>
@@ -176,6 +185,7 @@ public static class TestTargets
     /// <returns>処理がなければtrue</returns>
     private static bool IsTrivialExpression(ExpressionSyntax expression)
     {
+        RuntimeHelpers.EnsureSufficientExecutionStack();
         return expression switch
         {
             IdentifierNameSyntax or LiteralExpressionSyntax => true,

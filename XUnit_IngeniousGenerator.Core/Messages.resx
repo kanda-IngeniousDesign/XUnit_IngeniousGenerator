@@ -285,4 +285,7 @@
   <data name="UnsupportedUsing" xml:space="preserve">
     <value>using statement</value>
   </data>
+  <data name="UnsupportedTooDeep" xml:space="preserve">
+    <value>nesting too deep (expression or calls)</value>
+  </data>
 </root>
