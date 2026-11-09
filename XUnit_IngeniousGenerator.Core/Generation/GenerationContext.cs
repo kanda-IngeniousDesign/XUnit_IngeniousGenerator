@@ -1,3 +1,4 @@
+using XUnit_IngeniousGenerator.Core.Evaluation;
 using Microsoft.CodeAnalysis;
 
 namespace XUnit_IngeniousGenerator.Core.Generation;
@@ -30,6 +31,9 @@ internal sealed class GenerationContext
 
     /// <summary>要手動（人間がテストを書けば単体テストで担保できるもの）</summary>
     public List<string> ManualItems { get; } = [];
+
+    /// <summary>テスト対象のインスタンスを作った直後の状態（フィールドを読む関数の期待値の計算に使う。求められなければnull）</summary>
+    public InstanceState? Instance { get; set; }
 
     /// <summary>生成不可（時刻・乱数・外部環境に依存し、単体テストでは担保しないもの）</summary>
     public List<string> NotGeneratableItems { get; } = [];

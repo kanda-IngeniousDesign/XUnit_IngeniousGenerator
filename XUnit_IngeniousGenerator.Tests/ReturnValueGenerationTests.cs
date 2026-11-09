@@ -158,7 +158,7 @@ public class ReturnValueGenerationTests
     }
 
     [Theory]
-    [InlineData("public decimal Rate(decimal price) => price * _rate;", "フィールド・プロパティ '_rate' の参照")]
+    [InlineData("public bool IsOpen(int value) => value == 0 || _lock == null;", "フィールド・プロパティ '_lock' の参照")]
     [InlineData("public int Sum(int count) { var total = 0; for (var i = 0; i < count; i++) total += i; return total; }", "ループ")]
     [InlineData("public string Show(double value) => value.ToString();", "カルチャに依存する文字列変換")]
     [InlineData("public string Price(double value) => \"\\\\\" + value;", "カルチャに依存する文字列変換")]
@@ -170,7 +170,7 @@ public class ReturnValueGenerationTests
             namespace Sample;
             public class Target
             {
-                private readonly decimal _rate = 0.9m;
+                private readonly object _lock = new object();
 
                 {{method}}
             }

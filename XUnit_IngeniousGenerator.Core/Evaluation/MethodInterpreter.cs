@@ -20,6 +20,9 @@ public sealed class MethodInterpreter
     private readonly StepBudget _budget;
     private object? _returnValue;
 
+    // テスト対象のインスタンスの状態（フィールド・自動実装プロパティ）。同じクラスの関数の呼び出し先とは共有する
+    private InstanceState? _state;
+
     private MethodInterpreter(SemanticModel model, IMethodSymbol member, ImmutableHashSet<IMethodSymbol> callStack, StepBudget budget)
     {
         _model = model;
@@ -50,12 +53,16 @@ public sealed class MethodInterpreter
     /// <param name="model">セマンティックモデル</param>
     /// <param name="member">メソッドのシンボル</param>
     /// <param name="arguments">引数の値（引数の順）</param>
+    /// <param name="state">テスト対象のインスタンスを作った直後の状態（なければフィールドを読む式は計算しない）</param>
     /// <returns>評価結果</returns>
     public static EvaluationResult Evaluate(
-        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments)
+        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments, InstanceState? state = null)
     {
         var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
         for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = ToInterpreterValue(arguments[i]);
+
+        // 入力ごとに写しを使い、関数の中での書き込みがほかの入力の評価に影響しないようにする
+        interpreter._state = state?.Copy();
 
         try
         {
@@ -387,6 +394,12 @@ public sealed class MethodInterpreter
     private void Assign(AssignmentExpressionSyntax assignment)
     {
         var target = _model.GetSymbolInfo(assignment.Left).Symbol;
+        if (target is not null && _state is not null && _state.Contains(target))
+        {
+            AssignState(assignment, target);
+            return;
+        }
+
         if (target is not (ILocalSymbol or IParameterSymbol) || !_variables.ContainsKey(target))
         {
             throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldAssignment", Shorten(assignment)));
@@ -444,6 +457,8 @@ public sealed class MethodInterpreter
             InvocationExpressionSyntax invocation => SameClassCall.Resolve(invocation, _model) is { } call
                 ? Call(call)
                 : KnownMethods.Invoke(invocation, _model, EvaluateConverted),
+            MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } thisAccess =>
+                ReadState(_model.GetSymbolInfo(thisAccess).Symbol, thisAccess.Name.Identifier.ValueText),
             MemberAccessExpressionSyntax memberAccess => KnownMethods.ReadMember(memberAccess, _model, EvaluateConverted),
             BaseObjectCreationExpressionSyntax creation when TemporalValues.KindOf(_model.GetTypeInfo(creation).Type) != TemporalKind.None =>
                 TemporalMethods.Create(creation, _model, EvaluateConverted),
@@ -465,7 +480,7 @@ public sealed class MethodInterpreter
         if (_callStack.Contains(call.Method)) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedRecursion", call.Method.Name));
         if (SameClassCall.MaxDepth <= _callStack.Count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedDeepCall", call.Method.Name));
 
-        var callee = new MethodInterpreter(call.Model, call.Method, _callStack, _budget);
+        var callee = new MethodInterpreter(call.Model, call.Method, _callStack, _budget) { _state = _state };
         foreach (var argument in call.Arguments)
         {
             callee._variables[argument.Parameter] = argument.Expression is null ? argument.DefaultValue : EvaluateConverted(argument.Expression);
@@ -503,9 +518,65 @@ public sealed class MethodInterpreter
     private object? ReadVariable(IdentifierNameSyntax identifier)
     {
         var symbol = _model.GetSymbolInfo(identifier).Symbol;
-        if (symbol is not null && _variables.TryGetValue(symbol, out var value)) return value;
+        if (symbol is not null && _variables.TryGetValue(symbol, out var value))
+        {
+            // 値の分からない引数（コンストラクタに渡したモックなど）は、計算に使えない
+            return ReferenceEquals(value, InstanceState.Unknown)
+                ? throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", identifier.Identifier.ValueText))
+                : value;
+        }
 
-        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", identifier.Identifier.ValueText));
+        return ReadState(symbol, identifier.Identifier.ValueText);
+    }
+
+    /// <summary>
+    /// フィールド・プロパティの値を、インスタンスの状態から読む（本体のある get は、同じクラスの関数と同じく中身を評価する）
+    /// </summary>
+    /// <param name="symbol">フィールド・プロパティ</param>
+    /// <param name="name">レポート用の名前</param>
+    /// <returns>値</returns>
+    private object? ReadState(ISymbol? symbol, string name)
+    {
+        if (symbol is not null && _state is not null && _state.Contains(symbol))
+        {
+            return _state.TryGet(symbol, out var value) ? value : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", name));
+        }
+
+        if (symbol is IPropertySymbol { GetMethod: { } getter } property && _state is not null
+            && SymbolEqualityComparer.Default.Equals(property.ContainingType, _state.Type))
+        {
+            return ReadComputedProperty(getter, name);
+        }
+
+        throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", name));
+    }
+
+    /// <summary>
+    /// 本体のある get（public decimal Total => _price * _count; など）を評価する
+    /// </summary>
+    /// <param name="getter">get アクセサー</param>
+    /// <param name="name">レポート用の名前</param>
+    /// <returns>値</returns>
+    private object? ReadComputedProperty(IMethodSymbol getter, string name)
+    {
+        var syntax = getter.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).FirstOrDefault();
+        var (expression, block) = syntax switch
+        {
+            ArrowExpressionClauseSyntax arrow => (arrow.Expression, (BlockSyntax?)null),
+            AccessorDeclarationSyntax { ExpressionBody: { } arrow } => (arrow.Expression, null),
+            AccessorDeclarationSyntax { Body: { } body } => (null, body),
+            _ => ((ExpressionSyntax?)null, (BlockSyntax?)null),
+        };
+        if (expression is null && block is null) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", name));
+        if (_callStack.Contains(getter)) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedRecursion", name));
+        if (SameClassCall.MaxDepth <= _callStack.Count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedDeepCall", name));
+
+        var callee = new MethodInterpreter(_model.Compilation.GetSemanticModel(syntax!.SyntaxTree), getter, _callStack, _budget) { _state = _state };
+        if (expression is not null) return callee.EvaluateConverted(expression);
+
+        return callee.Execute(block!) == Flow.Return
+            ? callee._returnValue
+            : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNoReturnPathIn", name));
     }
 
     /// <summary>
@@ -592,6 +663,135 @@ public sealed class MethodInterpreter
         }
 
         throw new UnsupportedSyntaxException(Messages.Get("UnsupportedOperator", Shorten(expression)));
+    }
+
+    /// <summary>
+    /// フィールド・自動実装プロパティへの代入（=, +=, -= など）を、インスタンスの状態に書く
+    /// </summary>
+    /// <param name="assignment">代入式</param>
+    /// <param name="target">フィールド・自動実装プロパティ</param>
+    private void AssignState(AssignmentExpressionSyntax assignment, ISymbol target)
+    {
+        var type = target is IFieldSymbol field ? field.Type : ((IPropertySymbol)target).Type;
+        if (assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
+        {
+            _state!.Set(target, EvaluateConverted(assignment.Right));
+            return;
+        }
+
+        if (!_state!.TryGet(target, out var current)) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", target.Name));
+
+        var op = GetOperator(assignment);
+        var left = ClrOperations.Convert(current, op.Parameters[0].Type);
+        var right = ClrOperations.Convert(EvaluateConverted(assignment.Right), op.Parameters[1].Type);
+        _state.Set(target, ClrOperations.Convert(ClrOperations.Binary(assignment.Kind(), op.Parameters[0].Type, left, right), type));
+    }
+
+    /// <summary>
+    /// テスト対象のインスタンスを作った直後の状態を、フィールドの初期化子とコンストラクタの本体を評価して求める。
+    /// 評価できない文で代入しているフィールドは、不明にする
+    /// </summary>
+    /// <param name="type">テスト対象のクラス</param>
+    /// <param name="constructor">テストで使うコンストラクタ</param>
+    /// <param name="arguments">コンストラクタに渡す値（評価用の値。モックなどは InstanceState.Unknown）</param>
+    /// <param name="compilation">コンパイル</param>
+    /// <returns>状態</returns>
+    public static InstanceState CreateState(INamedTypeSymbol type, IMethodSymbol constructor, IReadOnlyList<object?> arguments, Compilation compilation)
+    {
+        var state = InstanceState.CreateInitial(type);
+        var budget = new StepBudget();
+        foreach (var member in type.GetMembers().Where(InstanceState.IsStateMember))
+        {
+            state.Set(member, InitialValue(member, constructor, state, compilation, budget));
+        }
+
+        if (constructor.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).FirstOrDefault() is not ConstructorDeclarationSyntax declaration) return state;
+
+        // this(...) で別のコンストラクタを呼ぶ場合は、その順序を再現しないため、値をすべて不明にする
+        if (declaration.Initializer is { } initializer && initializer.IsKind(SyntaxKind.ThisConstructorInitializer))
+        {
+            state.ForgetAll();
+            return state;
+        }
+
+        var model = compilation.GetSemanticModel(declaration.SyntaxTree);
+        var interpreter = new MethodInterpreter(model, constructor, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), budget) { _state = state };
+        for (var i = 0; i < arguments.Count; i++) interpreter._variables[constructor.Parameters[i]] = ToInterpreterValue(arguments[i]);
+
+        // 式本体（=> _x = x;）は1つの式文として扱う
+        IEnumerable<SyntaxNode> steps = declaration.ExpressionBody is { } arrow ? [arrow.Expression] : declaration.Body?.Statements ?? [];
+        foreach (var step in steps)
+        {
+            if (!interpreter.TryRunConstructorStep(step)) break;
+        }
+
+        return state;
+    }
+
+    /// <summary>
+    /// コンストラクタの文（または式本体）を1つ実行する。評価できない文で代入しているフィールドは不明にし、
+    /// 例外になった場合は、すべての値を不明にして打ち切る
+    /// </summary>
+    /// <param name="step">文、または式本体の式</param>
+    /// <returns>続けて次の文を実行してよいならtrue</returns>
+    private bool TryRunConstructorStep(SyntaxNode step)
+    {
+        try
+        {
+            if (step is StatementSyntax statement) Execute(statement);
+            else ExecuteExpressionStatement((ExpressionSyntax)step);
+            return true;
+        }
+        catch (UnsupportedSyntaxException)
+        {
+            foreach (var assigned in step.DescendantNodesAndSelf().OfType<AssignmentExpressionSyntax>())
+            {
+                var target = _model.GetSymbolInfo(assigned.Left).Symbol;
+                if (target is not null && _state!.Contains(target)) _state.Set(target, InstanceState.Unknown);
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is GuestThrowException or ArithmeticException)
+        {
+            _state!.ForgetAll();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// フィールド・自動実装プロパティの初期値（初期化子を評価した値、なければ型の既定値）を求める
+    /// </summary>
+    /// <param name="member">フィールド・自動実装プロパティ</param>
+    /// <param name="constructor">テストで使うコンストラクタ（初期化子を評価するときの文脈）</param>
+    /// <param name="state">ここまでに求めた状態</param>
+    /// <param name="compilation">コンパイル</param>
+    /// <param name="budget">計算量の上限</param>
+    /// <returns>初期値（評価できなければ不明）</returns>
+    private static object? InitialValue(ISymbol member, IMethodSymbol constructor, InstanceState state, Compilation compilation, StepBudget budget)
+    {
+        var syntax = member.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).FirstOrDefault();
+        var initializer = syntax switch
+        {
+            VariableDeclaratorSyntax variable => variable.Initializer?.Value,
+            PropertyDeclarationSyntax property => property.Initializer?.Value,
+            _ => null,
+        };
+        var type = member is IFieldSymbol field ? field.Type : ((IPropertySymbol)member).Type;
+        if (initializer is null) return InstanceState.DefaultValue(type);
+
+        var interpreter = new MethodInterpreter(compilation.GetSemanticModel(initializer.SyntaxTree), constructor, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), budget)
+        {
+            _state = state,
+        };
+        try
+        {
+            return interpreter.EvaluateConverted(initializer);
+        }
+        catch (Exception ex) when (ex is UnsupportedSyntaxException or GuestThrowException or ArithmeticException)
+        {
+            return InstanceState.Unknown;
+        }
     }
 
     /// <summary>

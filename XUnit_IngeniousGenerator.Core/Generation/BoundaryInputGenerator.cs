@@ -26,10 +26,11 @@ internal static class BoundaryInputGenerator
     /// <param name="failedParameter">値を作れなかった引数</param>
     /// <param name="avoidBodyThrows">本体の途中で例外になる値も避けるか（false なら先頭のガードだけを避け、途中の throw に到達する入力も作る）</param>
     /// <param name="construct">引数なしコンストラクタがないクラスの引数を生成する方法</param>
+    /// <param name="instance">テスト対象のインスタンスを作った直後の状態（例外になる入力を除くときに使う）</param>
     /// <returns>入力（値を作れない引数があればnull）</returns>
     public static BoundaryInputs? Generate(
         IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, MemberGuards guards, bool allowMocks, bool varyCollections,
-        out IParameterSymbol? failedParameter, bool avoidBodyThrows = true, Func<INamedTypeSymbol, TestValue?>? construct = null)
+        out IParameterSymbol? failedParameter, bool avoidBodyThrows = true, Func<INamedTypeSymbol, TestValue?>? construct = null, InstanceState? instance = null)
     {
         // 先頭のガードに加えて、本体の途中で例外になる条件も避ける（スナップショットは生成時に実行して確かめられないため）
         var leadingGuards = guards.Statements.Where(s => s.IsRecognized).SelectMany(s => s.Cases);
@@ -58,7 +59,7 @@ internal static class BoundaryInputGenerator
 
         failedParameter = null;
         var rows = CombineOneAtATime([.. builder.BaseRow], [.. builder.Variations]);
-        if (avoidBodyThrows && builder.FixedValues.Count == 0) rows = RemoveThrowingRows(rows, member, declaration, model);
+        if (avoidBodyThrows && builder.FixedValues.Count == 0) rows = RemoveThrowingRows(rows, member, declaration, model, instance);
         return new BoundaryInputs(builder.DataParameters, builder.FixedValues, rows);
     }
 
@@ -70,8 +71,10 @@ internal static class BoundaryInputGenerator
     /// <param name="member">メソッド</param>
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
+    /// <param name="instance">テスト対象のインスタンスを作った直後の状態</param>
     /// <returns>例外にならない入力の一覧</returns>
-    private static List<object?[]> RemoveThrowingRows(List<object?[]> rows, IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model)
+    private static List<object?[]> RemoveThrowingRows(
+        List<object?[]> rows, IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, InstanceState? instance)
     {
         // throw も ThrowIf～ もない関数は評価しない（呼び出しの多い関数で、入力ごとの評価が重くなるため）
         var bodies = SameClassCall.FindReachable(declaration, model).Select(c => (SyntaxNode)c.Declaration).Prepend(declaration);
@@ -79,7 +82,7 @@ internal static class BoundaryInputGenerator
             || (n is InvocationExpressionSyntax invocation && invocation.Expression.ToString().Contains(".ThrowIf")));
         if (!mayThrow) return rows;
 
-        var passing = rows.Where(r => MethodInterpreter.Evaluate(declaration, model, member, r).Kind != EvaluationKind.Threw).ToList();
+        var passing = rows.Where(r => MethodInterpreter.Evaluate(declaration, model, member, r, instance).Kind != EvaluationKind.Threw).ToList();
         return passing.Count == 0 ? rows : passing;
     }
 

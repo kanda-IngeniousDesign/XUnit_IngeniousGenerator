@@ -59,7 +59,7 @@ internal sealed class ReturnValueTestPlanner
         var checksOnlyNoThrow = member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType) || dependency is not null;
         var inputs = BoundaryInputGenerator.Generate(
             member, declaration, model, guards, _context.Options.UseMoq, varyCollections: checksOnlyNoThrow, out var failedParameter,
-            construct: _context.Constructor.CreateDependency);
+            construct: _context.Constructor.CreateDependency, instance: _context.Instance);
         if (inputs is null)
         {
             var hint = _context.Options.UseMoq ? string.Empty : Messages.Get("MoqHint");
@@ -128,13 +128,13 @@ internal sealed class ReturnValueTestPlanner
     /// <param name="inputs">テストの入力（すべての引数が境界値の対象）</param>
     /// <param name="reason">計算できない場合の理由（計算できた、またはすべて例外になった場合はnull）</param>
     /// <returns>戻り値テスト（計算できない、またはすべて例外になった場合はnull）</returns>
-    private static ReturnValueTestCase? TryCompute(
+    private ReturnValueTestCase? TryCompute(
         IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, BoundaryInputs inputs, out string? reason)
     {
         var rows = new List<(IReadOnlyList<object?>, object?)>(inputs.Rows.Count);
         foreach (var input in inputs.Rows)
         {
-            var result = MethodInterpreter.Evaluate(declaration, model, member, input);
+            var result = MethodInterpreter.Evaluate(declaration, model, member, input, _context.Instance);
             reason = result switch
             {
                 { Kind: EvaluationKind.Unsupported } => result.Reason,
@@ -169,7 +169,7 @@ internal sealed class ReturnValueTestPlanner
     /// <param name="returnType">戻り値の型</param>
     /// <param name="value">評価の結果</param>
     /// <returns>期待値（列挙型のメンバーに当たらなければnull）</returns>
-    private static object? ToExpectedValue(ITypeSymbol returnType, object? value)
+    internal static object? ToExpectedValue(ITypeSymbol returnType, object? value)
     {
         if (!DataTypes.IsEnum(returnType) || value is not (int or long)) return value;
 
