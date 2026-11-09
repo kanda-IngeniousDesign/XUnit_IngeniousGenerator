@@ -57,9 +57,27 @@ public sealed class ValueRenderer
         {
             EnumMemberValue member => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, RenderType(member.Type), IdentifierName(member.Name)),
             CollectionValue collection => RenderCollection(collection),
+            ObjectValue instance => RenderObject(instance),
             _ when TemporalValues.IsTemporal(value) => RenderTemporal(value!),
             _ => RenderClrValue(value),
         };
+    }
+
+    /// <summary>
+    /// クラス（DTO）の値を、new Customer { Last = "a" } または new Customer("a") にする
+    /// </summary>
+    /// <param name="instance">クラスの値</param>
+    /// <returns>式の構文</returns>
+    private ExpressionSyntax RenderObject(ObjectValue instance)
+    {
+        // new で書く型には、null 許容の注釈（Customer?）を付けられない
+        var creation = ObjectCreationExpression(RenderType(instance.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated)));
+        if (instance.Properties.Count == 0) return creation.WithArgumentList(ArgumentList(SeparatedList(instance.Arguments.Select(a => Argument(RenderData(a))))));
+
+        // 初期化子だけで作る場合は、空のかっこを付けない（new Customer { Last = "a" }）
+        var assignments = instance.Properties.Select(p => (ExpressionSyntax)AssignmentExpression(
+            SyntaxKind.SimpleAssignmentExpression, IdentifierName(p.Property.Name), RenderData(p.Value)));
+        return creation.WithInitializer(InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList(assignments)));
     }
 
     /// <summary>

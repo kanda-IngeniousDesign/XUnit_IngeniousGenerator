@@ -52,6 +52,13 @@ internal static class ClrOperations
     public static object? Binary(SyntaxKind kind, ITypeSymbol operandType, object? left, object? right)
     {
         if (TemporalValues.KindOf(operandType) != TemporalKind.None) return TemporalMethods.Binary(kind, left, right);
+
+        // 参照型と null の比較（customer == null など）は、null かどうかで決まる
+        if (kind is SyntaxKind.EqualsExpression or SyntaxKind.NotEqualsExpression && !operandType.IsValueType && (left is null || right is null)
+            && operandType.SpecialType != SpecialType.System_String)
+        {
+            return kind == SyntaxKind.EqualsExpression == (left is null && right is null);
+        }
         if (operandType.TypeKind == TypeKind.Enum && left is int leftNumber && right is int rightNumber) return Int32Binary(kind, leftNumber, rightNumber);
         if (operandType.TypeKind == TypeKind.Enum && left is long leftLong && right is long rightLong) return Int64Binary(kind, leftLong, rightLong);
 
