@@ -24,6 +24,12 @@ Generated tests:
 - Snapshot tests (Verify) for values that can't be computed statically, with dependencies mocked by Moq (when the test project references Verify.Xunit and Moq). Each snapshot test has a comment saying why the value could not be computed statically.
 - No-exception checks for methods without a return value.
 
+Review the generated tests before committing them. Expected values are what the current code does, not what the specification says; if the code has a bug, the generated test expects the buggy result.
+
+- `Assert.Equal` tests: check that the expected values (the last column of `InlineData` / `TheoryData`) match the specification.
+- Verify tests: the first run creates the `.verified.txt` files automatically. Check their contents against the specification before committing them.
+- When a later run produces a different result, Verify writes a `.received.txt` file and the test fails. Compare the two; accept the new result if the change is intended, otherwise fix the code. On CI (build servers), results are never accepted automatically, so a missing `.verified.txt` fails the build.
+
 The test project is looked up next to the project as `<ProjectName>.Tests` by default; set the `IngeniousTestProjectDirectory` property in the csproj to use another folder. Product code is never rewritten.
 
 This package is independent of [CSharp_IngeniousAnalyzer](https://github.com/kanda-IngeniousDesign/CSharp_IngeniousAnalyzer) (static analysis rules); install either or both.
@@ -41,6 +47,12 @@ C#のコードから、xUnitのテストコードをRoslynだけで決定的に�
 - 自動生成はしないが、テストしていない一覧には載るもの：public でないクラスの関数（アクセス修飾子のないクラスは internal です。テストを生成するには public にしてください）、public でない関数、処理のあるプロパティの get、演算子、インデクサー、静的コンストラクタ、入れ子のクラスの関数。private の関数は、それを呼ぶ public の関数のテストで確かめます。
 - record と構造体は解析の対象外です。既存のテストメソッドは変更しません（本物のテストを追加した関数のスキップのテストだけは置き換えます）。
 - オーバーロードは、テスト名に引数の型を付けて区別します（`Add_Int_...`、`Add_Decimal_...`）。
+
+生成されたテストは、コミットする前に必ず人が確認してください。期待値は「今のコードの実行結果」で、仕様として正しいかは保証しません。コードにバグがあれば、そのバグを正解とするテストが生成されます。
+
+- `Assert.Equal` のテスト：期待値（`InlineData`・`TheoryData` の最後の列）が仕様どおりかを確認します。
+- Verify のテスト：初回の実行で `.verified.txt` が自動で作られます。その中身が仕様どおりかを確認してからコミットします。
+- 2回目以降に結果が変わると、`.received.txt` ができてテストが失敗します。差分を見て、正しい変更なら承認し、誤りならコードを直します。CI（ビルドサーバー）では自動で承認しないため、`.verified.txt` のコミット漏れは失敗として見つかります。
 
 テストプロジェクトは、既定では隣のフォルダの「プロジェクト名.Tests」を探します。別の場所にある場合は、csprojで `IngeniousTestProjectDirectory` プロパティを指定してください。プロダクトコードは書き換えません。
 
