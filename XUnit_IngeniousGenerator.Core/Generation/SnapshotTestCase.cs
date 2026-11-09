@@ -14,14 +14,19 @@ internal sealed class SnapshotTestCase : PlannedTest
     /// <param name="member">テスト対象のメソッド</param>
     /// <param name="testName">テストメソッド名</param>
     /// <param name="inputs">テストの入力</param>
-    public SnapshotTestCase(IMethodSymbol member, string testName, BoundaryInputs inputs)
+    /// <param name="reason">戻り値を静的に計算できない理由（テストにコメントで書く）</param>
+    public SnapshotTestCase(IMethodSymbol member, string testName, BoundaryInputs inputs, string reason)
         : base(member, testName)
     {
         Inputs = inputs;
+        Reason = reason;
     }
 
     /// <summary>テストの入力</summary>
     public BoundaryInputs Inputs { get; }
+
+    /// <summary>戻り値を静的に計算できない理由</summary>
+    public string Reason { get; }
 
     /// <summary>
     /// スナップショットテストのメソッド（と、必要ならテストデータのプロパティ）を組み立てる

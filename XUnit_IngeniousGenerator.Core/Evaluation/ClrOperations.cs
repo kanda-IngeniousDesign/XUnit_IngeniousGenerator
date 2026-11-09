@@ -28,7 +28,7 @@ internal static class ClrOperations
         if (TemporalValues.KindOf(target) != TemporalKind.None && TemporalValues.IsTemporal(value)) return value;
 
         // 列挙型の値（date.DayOfWeek など）は、元になる整数のまま扱う
-        if (target.TypeKind == TypeKind.Enum && value is int) return value;
+        if (target.TypeKind == TypeKind.Enum && value is int or long) return value;
 
         return target.SpecialType switch
         {
@@ -53,6 +53,7 @@ internal static class ClrOperations
     {
         if (TemporalValues.KindOf(operandType) != TemporalKind.None) return TemporalMethods.Binary(kind, left, right);
         if (operandType.TypeKind == TypeKind.Enum && left is int leftNumber && right is int rightNumber) return Int32Binary(kind, leftNumber, rightNumber);
+        if (operandType.TypeKind == TypeKind.Enum && left is long leftLong && right is long rightLong) return Int64Binary(kind, leftLong, rightLong);
 
         return operandType.SpecialType switch
         {

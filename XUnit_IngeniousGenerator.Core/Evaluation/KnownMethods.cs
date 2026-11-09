@@ -24,6 +24,19 @@ internal static class KnownMethods
 
         if (TemporalMethods.TryInvoke(invocation, method, evaluate, out var temporal)) return temporal;
 
+        // 整数・bool・char・列挙型の ToString() は、カルチャに依存しない文字列にする
+        if (!method.IsStatic && method.Name == nameof(ToString) && method.Parameters.Length == 0
+            && invocation.Expression is MemberAccessExpressionSyntax target && method.ContainingType.SpecialType != SpecialType.System_String)
+        {
+            return TextFormatting.ToText(evaluate(target.Expression), model.GetTypeInfo(target.Expression).Type);
+        }
+
+        if (method.IsStatic && method.ContainingType.SpecialType == SpecialType.System_String
+            && TextFormatting.TryInvokeStringStatic(method.Name, invocation, model, evaluate, out var formatted))
+        {
+            return formatted;
+        }
+
         if (!method.IsStatic)
         {
             if (method.ContainingType.SpecialType != SpecialType.System_String || invocation.Expression is not MemberAccessExpressionSyntax receiver)
@@ -65,6 +78,7 @@ internal static class KnownMethods
     public static object? ReadMember(MemberAccessExpressionSyntax memberAccess, SemanticModel model, Func<ExpressionSyntax, object?> evaluate)
     {
         if (TemporalMethods.TryReadMember(memberAccess, model.GetSymbolInfo(memberAccess).Symbol, evaluate, out var temporal)) return temporal;
+        if (model.GetSymbolInfo(memberAccess).Symbol is IFieldSymbol { Name: nameof(string.Empty), ContainingType.SpecialType: SpecialType.System_String }) return string.Empty;
 
         if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol { Name: "Length", ContainingType.SpecialType: SpecialType.System_String })
         {

@@ -160,9 +160,10 @@ public class ReturnValueGenerationTests
     [Theory]
     [InlineData("public decimal Rate(decimal price) => price * _rate;", "フィールド・プロパティ '_rate' の参照")]
     [InlineData("public int Sum(int count) { var total = 0; for (var i = 0; i < count; i++) total += i; return total; }", "ループ")]
-    [InlineData("public string Show(int value) => value.ToString();", "メソッド呼び出し 'value.ToString'")]
+    [InlineData("public string Show(double value) => value.ToString();", "カルチャに依存する文字列変換")]
     [InlineData("public string Price(double value) => \"\\\\\" + value;", "カルチャに依存する文字列変換")]
-    [InlineData("public string Text(int value) => $\"{value}件\";", "文字列補間")]
+    [InlineData("public string Text(int value) => $\"{value:N0}件\";", "文字列補間")]
+    [InlineData("public string Ratio(double value) => $\"{value}%\";", "カルチャに依存する文字列変換")]
     public void Generate_UnsupportedSyntax_ReportsReason(string method, string reason)
     {
         var source = $$"""

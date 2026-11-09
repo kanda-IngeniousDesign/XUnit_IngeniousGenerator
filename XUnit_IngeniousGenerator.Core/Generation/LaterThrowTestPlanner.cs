@@ -63,7 +63,7 @@ internal sealed class LaterThrowTestPlanner
     /// <returns>探せるならtrue</returns>
     private static bool CanEvaluate(IMethodSymbol member, BaseMethodDeclarationSyntax declaration)
     {
-        if (!member.Parameters.All(p => DataTypes.IsPrimitive(p.Type))) return false;
+        if (!member.Parameters.All(p => DataTypes.IsPrimitive(p.Type) || DataTypes.IsEnum(p.Type))) return false;
 
         return member.MethodKind == MethodKind.Ordinary
             || (member.MethodKind == MethodKind.Constructor && declaration is ConstructorDeclarationSyntax { Initializer: null });
