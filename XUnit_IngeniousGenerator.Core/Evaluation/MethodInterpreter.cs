@@ -55,7 +55,7 @@ public sealed class MethodInterpreter
         BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments)
     {
         var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
-        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = arguments[i];
+        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = ToInterpreterValue(arguments[i]);
 
         try
         {
@@ -98,7 +98,7 @@ public sealed class MethodInterpreter
         BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments, ExpressionSyntax condition)
     {
         var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
-        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = arguments[i];
+        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = ToInterpreterValue(arguments[i]);
 
         try
         {
@@ -125,7 +125,7 @@ public sealed class MethodInterpreter
         if (declaration.Body is null) return false;
 
         var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
-        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = arguments[i];
+        for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = ToInterpreterValue(arguments[i]);
 
         try
         {
@@ -450,7 +450,7 @@ public sealed class MethodInterpreter
             SwitchExpressionSyntax switchExpression => EvaluateSwitch(switchExpression),
             IsPatternExpressionSyntax isPattern => new PatternMatcher(_model).Matches(isPattern.Pattern, EvaluateConverted(isPattern.Expression)),
             ThrowExpressionSyntax throwExpression => throw CreateThrow(throwExpression.Expression, throwExpression),
-            InterpolatedStringExpressionSyntax => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedInterpolation")),
+            InterpolatedStringExpressionSyntax interpolated => TextFormatting.Interpolate(interpolated, _model, EvaluateConverted),
             _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpression", Shorten(expression))),
         };
     }
@@ -592,6 +592,20 @@ public sealed class MethodInterpreter
         }
 
         throw new UnsupportedSyntaxException(Messages.Get("UnsupportedOperator", Shorten(expression)));
+    }
+
+    /// <summary>
+    /// 入力の値を評価用の値にする（列挙型のメンバーは、元になる整数にして比較・switch で扱えるようにする）
+    /// </summary>
+    /// <param name="value">入力の値</param>
+    /// <returns>評価用の値</returns>
+    private static object? ToInterpreterValue(object? value)
+    {
+        if (value is not EnumMemberValue member) return value;
+
+        var constant = member.Type.GetMembers(member.Name).OfType<IFieldSymbol>().First().ConstantValue;
+        // 三項演算子の両辺を object にして、int の値が long に揃えられないようにする
+        return constant is long l ? (object)l : System.Convert.ToInt32(constant, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>

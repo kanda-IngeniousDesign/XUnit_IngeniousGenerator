@@ -31,7 +31,7 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>扱えるならtrue</returns>
     public static bool IsSupportedType(ITypeSymbol type)
     {
-        return DataTypes.IsPrimitive(type);
+        return DataTypes.IsPrimitive(type) || DataTypes.IsEnum(type);
     }
 
     /// <summary>
@@ -92,7 +92,7 @@ internal sealed class ReturnValueTestPlanner
         var testName = inputs.DataParameters.Count == 0
             ? $"{MemberDisplay.GetTestName(member)}_DefaultInputs_MatchesSnapshot"
             : $"{MemberDisplay.GetTestName(member)}_BoundaryValues_MatchesSnapshot";
-        return new SnapshotTestCase(member, testName, inputs);
+        return new SnapshotTestCase(member, testName, inputs, reason!);
     }
 
     /// <summary>
@@ -145,11 +145,38 @@ internal sealed class ReturnValueTestPlanner
             if (reason is not null) return null;
 
             // 例外になる入力は、例外テストの対象のため戻り値テストには含めない
-            if (result.Kind == EvaluationKind.Returned) rows.Add((input, result.Value));
+            if (result.Kind == EvaluationKind.Returned)
+            {
+                // 列挙型の戻り値は、評価では整数で持つため、期待値に書けるメンバー（Rank.Gold など）に戻す
+                var value = ToExpectedValue(member.ReturnType, result.Value);
+                if (value is null)
+                {
+                    reason = Messages.Get("UnsupportedEnumValue");
+                    return null;
+                }
+
+                rows.Add((input, value));
+            }
         }
 
         reason = null;
         return rows.Count == 0 ? null : new ReturnValueTestCase(member, $"{MemberDisplay.GetTestName(member)}_BoundaryValues_ReturnsExpected", rows);
+    }
+
+    /// <summary>
+    /// 評価の結果を、期待値に書ける値にする（列挙型は、整数からメンバーに戻す）
+    /// </summary>
+    /// <param name="returnType">戻り値の型</param>
+    /// <param name="value">評価の結果</param>
+    /// <returns>期待値（列挙型のメンバーに当たらなければnull）</returns>
+    private static object? ToExpectedValue(ITypeSymbol returnType, object? value)
+    {
+        if (!DataTypes.IsEnum(returnType) || value is not (int or long)) return value;
+
+        var number = System.Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);
+        var field = returnType.GetMembers().OfType<IFieldSymbol>()
+            .FirstOrDefault(f => f.HasConstantValue && System.Convert.ToInt64(f.ConstantValue, System.Globalization.CultureInfo.InvariantCulture) == number);
+        return field is null ? null : new EnumMemberValue(returnType, field.Name);
     }
 
     /// <summary>

@@ -241,10 +241,15 @@ internal sealed class TestSyntaxBuilder
             .AddParameterListParameters([.. parameters])
             .WithBody(Block(ReturnStatement(autoVerify)));
 
-        if (inputs.DataParameters.Count == 0) return [method.AddAttributeLists(AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Fact")))))];
+        var members = inputs.DataParameters.Count == 0
+            ? [method.AddAttributeLists(AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Fact")))))]
+            : WithTheoryData(
+                method, MemberDisplay.GetTestName(member) + "_SnapshotInputs", inputs.DataParameters.Select(p => p.Type).ToList(),
+                inputs.Rows.Select(r => (IReadOnlyList<object?>)r).ToList());
 
-        var rows = inputs.Rows.Select(r => (IReadOnlyList<object?>)r).ToList();
-        return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_SnapshotInputs", inputs.DataParameters.Select(p => p.Type).ToList(), rows);
+        // なぜ期待値を書けず記録で確かめるのかを、テストの直前にコメントで残す（レビューと、計算できる範囲を広げる手がかりにする）
+        var comment = Comment("// " + Messages.Get("SnapshotReason", test.Reason));
+        return members.Select(m => m is MethodDeclarationSyntax ? m.WithLeadingTrivia(comment, CarriageReturnLineFeed) : m);
     }
 
     /// <summary>

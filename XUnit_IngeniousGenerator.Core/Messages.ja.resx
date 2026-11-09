@@ -288,4 +288,10 @@
   <data name="UnsupportedTooDeep" xml:space="preserve">
     <value>入れ子が深すぎる（式・呼び出し）</value>
   </data>
+  <data name="SnapshotReason" xml:space="preserve">
+    <value>戻り値を静的に計算できない理由: {0}</value>
+  </data>
+  <data name="UnsupportedEnumValue" xml:space="preserve">
+    <value>列挙型のメンバーに当たらない値</value>
+  </data>
 </root>
