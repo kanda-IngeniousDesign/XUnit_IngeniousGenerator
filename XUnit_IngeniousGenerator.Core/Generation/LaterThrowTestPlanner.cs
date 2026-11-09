@@ -47,8 +47,8 @@ internal sealed class LaterThrowTestPlanner
         if (CanEvaluate(member, declaration))
         {
             var inputs = BoundaryInputGenerator.Generate(
-                member, declaration, model, leadingGuards, allowMocks: false, varyCollections: false, out _, avoidBodyThrows: false);
-            if (inputs is not null) tests.AddRange(FindThrowingInputs(member, declaration, model, inputs, sites, covered));
+                member, declaration, model, leadingGuards, allowMocks: false, varyCollections: false, out _, avoidBodyThrows: false, instance: _context.Instance);
+            if (inputs is not null) tests.AddRange(FindThrowingInputs(member, declaration, model, inputs, sites, covered, _context.Instance));
         }
 
         ReportUncovered(guards, recognizedCount, sites, covered, display);
@@ -137,9 +137,11 @@ internal sealed class LaterThrowTestPlanner
     /// <param name="inputs">境界値の入力（すべての引数が基本の型）</param>
     /// <param name="sites">ガードより後ろの throw</param>
     /// <param name="covered">テストを作った throw の記録先</param>
+    /// <param name="instance">テスト対象のインスタンスを作った直後の状態</param>
     /// <returns>例外テストの一覧</returns>
     private static IEnumerable<PlannedTest> FindThrowingInputs(
-        IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, BoundaryInputs inputs, HashSet<SyntaxNode> sites, HashSet<SyntaxNode> covered)
+        IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, BoundaryInputs inputs, HashSet<SyntaxNode> sites, HashSet<SyntaxNode> covered,
+        InstanceState? instance)
     {
         var baseRow = inputs.Rows[0];
         var coveredConditions = new HashSet<(SyntaxNode Site, int Condition)>();
@@ -147,7 +149,7 @@ internal sealed class LaterThrowTestPlanner
         foreach (var row in inputs.Rows)
         {
             // 評価できない入力があっても、ほかの入力では throw に到達する場合がある（コンストラクタのフィールドへの代入など）
-            var result = MethodInterpreter.Evaluate(declaration, model, member, row);
+            var result = MethodInterpreter.Evaluate(declaration, model, member, row, instance);
             if (result.Kind == EvaluationKind.Unsupported) continue;
             if (result.Kind != EvaluationKind.Threw || result.ExceptionType is null || result.ThrowSite is null) continue;
             if (!sites.Contains(result.ThrowSite)) continue;

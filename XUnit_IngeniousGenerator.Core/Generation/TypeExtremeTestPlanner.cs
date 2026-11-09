@@ -21,8 +21,9 @@ internal static class TypeExtremeTestPlanner
     /// <param name="test">静的に計算できた戻り値テスト</param>
     /// <param name="declaration">メソッドの宣言</param>
     /// <param name="model">セマンティックモデル</param>
+    /// <param name="instance">テスト対象のインスタンスを作った直後の状態</param>
     /// <returns>行を加えた戻り値テストと、例外テスト</returns>
-    public static IEnumerable<PlannedTest> Extend(ReturnValueTestCase test, BaseMethodDeclarationSyntax declaration, SemanticModel model)
+    public static IEnumerable<PlannedTest> Extend(ReturnValueTestCase test, BaseMethodDeclarationSyntax declaration, SemanticModel model, InstanceState? instance)
     {
         var member = test.Member;
         var rows = test.Rows.ToList();
@@ -32,10 +33,12 @@ internal static class TypeExtremeTestPlanner
 
         foreach (var row in BuildRows(member, baseRow, checkOverflow).Where(row => !rows.Any(r => r.Inputs.SequenceEqual(row))))
         {
-            var result = MethodInterpreter.Evaluate(declaration, model, member, row);
+            var result = MethodInterpreter.Evaluate(declaration, model, member, row, instance);
             if (IsUsableReturn(result))
             {
-                if (rows.Count < MaxRows) rows.Add((row, result.Value));
+                // 列挙型の戻り値は、整数からメンバーに戻して期待値にする（メンバーに当たらない値は加えない）
+                var expected = ReturnValueTestPlanner.ToExpectedValue(member.ReturnType, result.Value);
+                if (rows.Count < MaxRows && expected is not null) rows.Add((row, expected));
             }
             else if (IsRuntimeException(result, model.Compilation))
             {
