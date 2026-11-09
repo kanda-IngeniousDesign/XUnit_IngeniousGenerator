@@ -393,6 +393,12 @@ public sealed class MethodInterpreter
     /// <param name="assignment">代入式</param>
     private void Assign(AssignmentExpressionSyntax assignment)
     {
+        // ほかのオブジェクト（引数のクラスなど）のプロパティへの代入は、入力の値を書き換えるため対象外にする
+        if (assignment.Left is MemberAccessExpressionSyntax { Expression: not ThisExpressionSyntax })
+        {
+            throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldAssignment", Shorten(assignment)));
+        }
+
         var target = _model.GetSymbolInfo(assignment.Left).Symbol;
         if (target is not null && _state is not null && _state.Contains(target))
         {
@@ -459,6 +465,7 @@ public sealed class MethodInterpreter
                 : KnownMethods.Invoke(invocation, _model, EvaluateConverted),
             MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } thisAccess =>
                 ReadState(_model.GetSymbolInfo(thisAccess).Symbol, thisAccess.Name.Identifier.ValueText),
+            MemberAccessExpressionSyntax objectAccess when IsObjectMember(objectAccess) => ReadObjectMember(objectAccess),
             MemberAccessExpressionSyntax memberAccess => KnownMethods.ReadMember(memberAccess, _model, EvaluateConverted),
             BaseObjectCreationExpressionSyntax creation when TemporalValues.KindOf(_model.GetTypeInfo(creation).Type) != TemporalKind.None =>
                 TemporalMethods.Create(creation, _model, EvaluateConverted),
@@ -545,10 +552,61 @@ public sealed class MethodInterpreter
         if (symbol is IPropertySymbol { GetMethod: { } getter } property && _state is not null
             && SymbolEqualityComparer.Default.Equals(property.ContainingType, _state.Type))
         {
-            return ReadComputedProperty(getter, name);
+            return ReadComputedProperty(getter, name, _state);
         }
 
         throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", name));
+    }
+
+    /// <summary>
+    /// ソースにあるクラスのインスタンスのフィールド・プロパティの参照（c.Age など）かを判定する
+    /// </summary>
+    /// <param name="memberAccess">メンバーアクセス式</param>
+    /// <returns>参照ならtrue</returns>
+    private bool IsObjectMember(MemberAccessExpressionSyntax memberAccess)
+    {
+        var symbol = _model.GetSymbolInfo(memberAccess).Symbol;
+        return symbol is IFieldSymbol { IsStatic: false } or IPropertySymbol { IsStatic: false }
+            && symbol.ContainingType.Locations.Any(l => l.IsInSource);
+    }
+
+    /// <summary>
+    /// クラス（DTO）の値のフィールド・プロパティを読む（null なら実行時と同じく NullReferenceException）
+    /// </summary>
+    /// <param name="memberAccess">メンバーアクセス式</param>
+    /// <returns>値</returns>
+    private object? ReadObjectMember(MemberAccessExpressionSyntax memberAccess)
+    {
+        var symbol = _model.GetSymbolInfo(memberAccess).Symbol!;
+        var name = memberAccess.Name.Identifier.ValueText;
+        var receiver = EvaluateConverted(memberAccess.Expression);
+        if (receiver is null) throw new GuestThrowException(null, "System.NullReferenceException", null, memberAccess);
+        if (receiver is not ObjectValue instance) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMember", memberAccess));
+
+        var state = GetObjectState(instance);
+        if (state.Contains(symbol))
+        {
+            return state.TryGet(symbol, out var value) ? value : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", name));
+        }
+
+        return symbol is IPropertySymbol { GetMethod: { } getter }
+            ? ReadComputedProperty(getter, name, state)
+            : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldReference", name));
+    }
+
+    /// <summary>
+    /// クラス（DTO）の値の状態を、コンストラクタと初期化子のプロパティから求める（一度求めたら使い回す）
+    /// </summary>
+    /// <param name="instance">クラスの値</param>
+    /// <returns>状態</returns>
+    private InstanceState GetObjectState(ObjectValue instance)
+    {
+        if (instance.State is InstanceState cached) return cached;
+
+        var state = CreateState(instance.Type, instance.Constructor, instance.Arguments, _model.Compilation);
+        foreach (var (property, value) in instance.Properties) state.Set(property, ToInterpreterValue(value));
+        instance.State = state;
+        return state;
     }
 
     /// <summary>
@@ -556,8 +614,9 @@ public sealed class MethodInterpreter
     /// </summary>
     /// <param name="getter">get アクセサー</param>
     /// <param name="name">レポート用の名前</param>
+    /// <param name="state">プロパティを持つインスタンスの状態</param>
     /// <returns>値</returns>
-    private object? ReadComputedProperty(IMethodSymbol getter, string name)
+    private object? ReadComputedProperty(IMethodSymbol getter, string name, InstanceState state)
     {
         var syntax = getter.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).FirstOrDefault();
         var (expression, block) = syntax switch
@@ -571,7 +630,7 @@ public sealed class MethodInterpreter
         if (_callStack.Contains(getter)) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedRecursion", name));
         if (SameClassCall.MaxDepth <= _callStack.Count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedDeepCall", name));
 
-        var callee = new MethodInterpreter(_model.Compilation.GetSemanticModel(syntax!.SyntaxTree), getter, _callStack, _budget) { _state = _state };
+        var callee = new MethodInterpreter(_model.Compilation.GetSemanticModel(syntax!.SyntaxTree), getter, _callStack, _budget) { _state = state };
         if (expression is not null) return callee.EvaluateConverted(expression);
 
         return callee.Execute(block!) == Flow.Return

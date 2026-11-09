@@ -202,6 +202,7 @@ public static class DataTypes
     /// <returns>含むならtrue</returns>
     public static bool RequiresTheoryData(IEnumerable<ITypeSymbol> types)
     {
-        return types.Any(t => t.SpecialType == SpecialType.System_Decimal || TemporalValues.KindOf(t) != TemporalKind.None || TryGetCollectionElement(t, out _));
+        return types.Any(t => t.SpecialType == SpecialType.System_Decimal || TemporalValues.KindOf(t) != TemporalKind.None || TryGetCollectionElement(t, out _)
+            || ObjectTypes.TryGetShape(t, out _, out _));
     }
 }

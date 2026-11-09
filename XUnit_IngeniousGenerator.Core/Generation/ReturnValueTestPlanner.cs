@@ -103,7 +103,7 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>対象外の理由（計算を試せる場合はnull）</returns>
     private static string? GetStaticReason(IMethodSymbol member, BoundaryInputs inputs)
     {
-        var structured = inputs.DataParameters.FirstOrDefault(p => !IsSupportedType(p.Type));
+        var structured = inputs.DataParameters.FirstOrDefault(p => !IsSupportedType(p.Type) && !ObjectTypes.TryGetShape(p.Type, out _, out _));
         if (structured is not null)
         {
             return Messages.Get("ParameterTypeNotComputable", structured.Name, structured.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));

@@ -63,7 +63,7 @@ internal sealed class LaterThrowTestPlanner
     /// <returns>探せるならtrue</returns>
     private static bool CanEvaluate(IMethodSymbol member, BaseMethodDeclarationSyntax declaration)
     {
-        if (!member.Parameters.All(p => DataTypes.IsPrimitive(p.Type) || DataTypes.IsEnum(p.Type))) return false;
+        if (!member.Parameters.All(p => DataTypes.IsPrimitive(p.Type) || DataTypes.IsEnum(p.Type) || ObjectTypes.TryGetShape(p.Type, out _, out _))) return false;
 
         return member.MethodKind == MethodKind.Ordinary
             || (member.MethodKind == MethodKind.Constructor && declaration is ConstructorDeclarationSyntax { Initializer: null });
@@ -234,12 +234,28 @@ internal sealed class LaterThrowTestPlanner
         {
             if (Equals(baseRow[i], row[i])) continue;
 
-            var name = member.Parameters[i].Name.TrimStart('_', '@');
-            var pascal = name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name.Substring(1);
-            return pascal + DescribeValue(row[i]);
+            var name = ToPascal(member.Parameters[i].Name.TrimStart('_', '@'));
+
+            // クラス（DTO）は、変えたプロパティの名前と値にする（例: CustomerAgeIs19）
+            if (row[i] is ObjectValue changed && baseRow[i] is ObjectValue original && changed.DescribeChange(original) is { } change)
+            {
+                return name + ToPascal(change.Name) + DescribeValue(change.Value);
+            }
+
+            return name + DescribeValue(row[i]);
         }
 
         return "DefaultInputs";
+    }
+
+    /// <summary>
+    /// 名前の先頭を大文字にする
+    /// </summary>
+    /// <param name="name">名前</param>
+    /// <returns>先頭を大文字にした名前</returns>
+    private static string ToPascal(string name)
+    {
+        return name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name.Substring(1);
     }
 
     /// <summary>

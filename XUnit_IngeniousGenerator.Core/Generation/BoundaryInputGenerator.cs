@@ -135,6 +135,16 @@ internal static class BoundaryInputGenerator
             return true;
         }
 
+        // クラス（DTO）は、基準の値と、本体で読んでいるプロパティを1つずつ境界値に変えた値を使う
+        if (ObjectTypes.TryGetShape(parameter.Type, out var constructor, out var properties))
+        {
+            var baseObject = CreateBaseObject((INamedTypeSymbol)parameter.Type, constructor, properties);
+            var others = GetObjectVariations(baseObject, constants.OfType<PropertyRead>());
+            if (allowNull) others.Add(null);
+            builder.AddData(parameter, baseObject, others);
+            return true;
+        }
+
         if (!DataTypes.IsPrimitive(parameter.Type))
         {
             var fixedValue = FindFixedValue(parameter.Type, conditions, allowMocks, construct);
@@ -237,6 +247,77 @@ internal static class BoundaryInputGenerator
                 if (!Variations[targetIndex].Contains(value)) Variations[targetIndex].Add(value);
             }
         }
+    }
+
+    /// <summary>
+    /// クラス（DTO）の基準の値を作る（プロパティ・コンストラクタの引数を、それぞれの型の基準の値にする）
+    /// </summary>
+    /// <param name="type">クラス</param>
+    /// <param name="constructor">使うコンストラクタ</param>
+    /// <param name="properties">初期化子で設定するプロパティ</param>
+    /// <returns>基準の値</returns>
+    private static ObjectValue CreateBaseObject(INamedTypeSymbol type, IMethodSymbol constructor, IReadOnlyList<IPropertySymbol> properties)
+    {
+        return new ObjectValue(
+            type, constructor, constructor.Parameters.Select(p => ScalarBaseValue(p.Type)).ToList(), properties.Select(p => (p, ScalarBaseValue(p.Type))).ToList());
+    }
+
+    /// <summary>
+    /// プロパティ・コンストラクタの引数の基準の値（数値は 1、文字列は "a"、列挙型は最初のメンバー、日付は基準の日付）
+    /// </summary>
+    /// <param name="type">型</param>
+    /// <returns>基準の値</returns>
+    private static object? ScalarBaseValue(ITypeSymbol type)
+    {
+        if (DataTypes.IsEnum(type)) return GetEnumMembers(type).FirstOrDefault();
+
+        var temporal = TemporalValues.KindOf(type);
+        if (temporal != TemporalKind.None) return TemporalValues.BaseValue(temporal);
+
+        var value = FindBaseValue(type, []);
+        return value is null ? null : ToClrValue(value, type);
+    }
+
+    /// <summary>
+    /// 本体で読んでいるプロパティを1つずつ、比べている定数の前後などの境界値に変えた値を作る
+    /// </summary>
+    /// <param name="baseObject">基準の値</param>
+    /// <param name="reads">読んでいるプロパティと、比べている定数</param>
+    /// <returns>変えた値</returns>
+    private static List<object?> GetObjectVariations(ObjectValue baseObject, IEnumerable<PropertyRead> reads)
+    {
+        var values = new List<object?>();
+        foreach (var group in reads.GroupBy(r => r.Property, SymbolEqualityComparer.Default))
+        {
+            var property = (IPropertySymbol)group.Key!;
+            var constants = group.Where(r => r.Constant is not null).Select(r => r.Constant!).ToList();
+            foreach (var value in GetScalarVariations(property, constants))
+            {
+                var changed = baseObject.With(property, value);
+                if (changed is not null && !changed.Equals(baseObject) && !values.Contains(changed)) values.Add(changed);
+            }
+        }
+
+        return values;
+    }
+
+    /// <summary>
+    /// プロパティ1つ分の境界値を作る（列挙型はほかのメンバー、日付は前後の日付、それ以外は数値・文字列の境界値）
+    /// </summary>
+    /// <param name="property">プロパティ</param>
+    /// <param name="constants">比べている定数</param>
+    /// <returns>境界値</returns>
+    private static List<object?> GetScalarVariations(IPropertySymbol property, List<object> constants)
+    {
+        var type = property.Type;
+        if (DataTypes.IsEnum(type)) return GetEnumMembers(type).Skip(1).ToList();
+
+        var temporal = TemporalValues.KindOf(type);
+        if (temporal != TemporalKind.None) return TemporalValues.Variations(temporal, constants);
+
+        var values = GetVariations(type, constants, []);
+        if (type.SpecialType == SpecialType.System_String && property.NullableAnnotation == NullableAnnotation.Annotated) values.Add(null);
+        return values;
     }
 
     /// <summary>
@@ -452,6 +533,7 @@ internal static class BoundaryInputGenerator
             AddConstant(result, parameter, constant.Value);
         }
 
+        AddPropertyReads(result, declaration, model, member);
         if (depth < SameClassCall.MaxDepth) AddCalleeConstants(result, declaration, model, member, calleeResults, depth);
         return result;
     }
@@ -468,10 +550,19 @@ internal static class BoundaryInputGenerator
     private static void AddPropertyConstants(
         Dictionary<IParameterSymbol, List<object>> result, ExpressionSyntax subject, object constant, SemanticModel model, IMethodSymbol member)
     {
-        if (subject is not MemberAccessExpressionSyntax memberAccess || constant is not (int or long)) return;
+        if (subject is not MemberAccessExpressionSyntax memberAccess) return;
 
         var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member);
         if (parameter is null) return;
+
+        // クラス（DTO）の引数のプロパティ（c.Age >= 20 など）は、そのプロパティの境界値の定数として記録する
+        if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol property && ObjectTypes.TryGetShape(parameter.Type, out _, out _))
+        {
+            AddConstant(result, parameter, new PropertyRead(property, constant));
+            return;
+        }
+
+        if (constant is not (int or long)) return;
 
         var number = System.Convert.ToInt64(constant, System.Globalization.CultureInfo.InvariantCulture);
         if (parameter.Type.SpecialType == SpecialType.System_String && memberAccess.Name.Identifier.ValueText == "Length")
@@ -514,6 +605,26 @@ internal static class BoundaryInputGenerator
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// クラス（DTO）の引数のプロパティを読んでいれば（c.Last など）、境界値で変えるプロパティとして記録する
+    /// </summary>
+    /// <param name="result">引数ごとの定数（追加先）</param>
+    /// <param name="declaration">メソッドの宣言</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド</param>
+    private static void AddPropertyReads(
+        Dictionary<IParameterSymbol, List<object>> result, BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member)
+    {
+        foreach (var memberAccess in declaration.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+        {
+            var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member);
+            if (parameter is null || model.GetSymbolInfo(memberAccess).Symbol is not IPropertySymbol property) continue;
+            if (!ObjectTypes.TryGetShape(parameter.Type, out _, out _)) continue;
+
+            AddConstant(result, parameter, new PropertyRead(property, null));
+        }
     }
 
     /// <summary>
