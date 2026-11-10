@@ -17,8 +17,8 @@ internal static class Resources
     /// <returns>文言</returns>
     public static string Get(string name, params object[] arguments)
     {
-        // Fix は IDE の中だけで動くため、IDE の表示言語（スレッドの表示言語）の文言を使う
-        var format = ResourceManager.GetString(name)
+        // Fix は IDE の中だけで動くため、IDE の表示言語の文言を使う（VS では、Fix を計算するスレッドの表示言語が VS と一致しないため VSLANG を優先する）
+        var format = ResourceManager.GetString(name, Core.UiLanguage.Current())
             ?? throw new InvalidOperationException($"Resource '{name}' is not defined.");
         return arguments.Length == 0 ? format : string.Format(CultureInfo.InvariantCulture, format, arguments);
     }

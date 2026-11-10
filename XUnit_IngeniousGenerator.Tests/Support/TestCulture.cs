@@ -10,11 +10,14 @@ namespace XUnit_IngeniousGenerator.Tests.Support;
 internal static class TestCulture
 {
     /// <summary>
-    /// テストのアセンブリを読み込んだときに、すべてのスレッドの表示言語を日本語にする
+    /// テストのアセンブリを読み込んだときに、すべてのスレッドの表示言語を日本語にする（VSLANG も消す）
     /// </summary>
     [ModuleInitializer]
     internal static void UseJapanese()
     {
+        // 表示言語は VSLANG が優先される。dotnet test は DOTNET_CLI_UI_LANGUAGE から VSLANG を設定するため（en なら 9）、テストのプロセスでは消す
+        Environment.SetEnvironmentVariable("VSLANG", null);
+
         var japanese = CultureInfo.GetCultureInfo("ja-JP");
         CultureInfo.DefaultThreadCurrentUICulture = japanese;
         CultureInfo.CurrentUICulture = japanese;

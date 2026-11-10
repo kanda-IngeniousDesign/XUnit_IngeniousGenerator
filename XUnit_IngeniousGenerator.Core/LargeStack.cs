@@ -27,7 +27,7 @@ internal static class LargeStack
         if (_running) return work();
 
         // 理由文などを IDE の表示言語で書くため、呼び出し元の表示言語を引き継ぐ
-        var uiCulture = CultureInfo.CurrentUICulture;
+        var uiCulture = UiLanguage.Current();
         var culture = CultureInfo.CurrentCulture;
         T result = default!;
         ExceptionDispatchInfo? error = null;

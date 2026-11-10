@@ -47,6 +47,31 @@ public class LocalizedReasonTests
         Assert.Contains("Skip = \"Not tested: ", result.Code);
     }
 
+    [Fact]
+    public void Resolve_VisualStudioLanguage_WinsOverThreadCulture()
+    {
+        // Visual Studio が Fix を計算するスレッドは英語でも、VS が日本語なら VSLANG=1041 で日本語にする
+        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "1041" : null, CultureInfo.GetCultureInfo("en-US"));
+
+        Assert.Equal("ja-JP", culture.Name);
+    }
+
+    [Fact]
+    public void Resolve_NoVisualStudioLanguage_UsesThreadCulture()
+    {
+        var culture = Core.UiLanguage.Resolve(_ => null, CultureInfo.GetCultureInfo("en-US"));
+
+        Assert.Equal("en-US", culture.Name);
+    }
+
+    [Fact]
+    public void Resolve_InvalidVisualStudioLanguage_UsesThreadCulture()
+    {
+        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "abc" : null, CultureInfo.GetCultureInfo("ja-JP"));
+
+        Assert.Equal("ja-JP", culture.Name);
+    }
+
     private static Core.GenerationResult GenerateWith(string culture)
     {
         var original = CultureInfo.CurrentUICulture;
