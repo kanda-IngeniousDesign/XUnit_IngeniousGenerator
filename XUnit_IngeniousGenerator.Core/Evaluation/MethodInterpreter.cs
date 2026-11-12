@@ -42,8 +42,11 @@ public sealed class MethodInterpreter
         /// <summary>return した</summary>
         Return,
 
-        /// <summary>switch 文の break に到達した</summary>
+        /// <summary>switch 文・ループの break に到達した</summary>
         Break,
+
+        /// <summary>ループの continue に到達した</summary>
+        Continue,
     }
 
     /// <summary>
@@ -190,6 +193,10 @@ public sealed class MethodInterpreter
                 return ExecuteSwitch(switchStatement);
             case BreakStatementSyntax:
                 return Flow.Break;
+            case ContinueStatementSyntax:
+                return Flow.Continue;
+            case ForEachStatementSyntax or ForStatementSyntax or WhileStatementSyntax or DoStatementSyntax:
+                return ExecuteLoop(statement);
             default:
                 throw new UnsupportedSyntaxException(DescribeStatement(statement));
         }
@@ -226,7 +233,7 @@ public sealed class MethodInterpreter
         {
             var flow = Execute(statement);
             if (flow == Flow.Break) return Flow.Normal;
-            if (flow == Flow.Return) return Flow.Return;
+            if (flow is Flow.Return or Flow.Continue) return flow;
         }
 
         return Flow.Normal;
@@ -285,7 +292,16 @@ public sealed class MethodInterpreter
     /// <param name="local">ローカル変数の宣言文</param>
     private void DeclareLocals(LocalDeclarationStatementSyntax local)
     {
-        foreach (var variable in local.Declaration.Variables)
+        DeclareVariables(local.Declaration);
+    }
+
+    /// <summary>
+    /// 変数の宣言（初期値つき）を実行する
+    /// </summary>
+    /// <param name="declaration">変数の宣言</param>
+    private void DeclareVariables(VariableDeclarationSyntax declaration)
+    {
+        foreach (var variable in declaration.Variables)
         {
             if (variable.Initializer is null) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedUninitializedLocal", variable.Identifier.ValueText));
 
@@ -305,11 +321,21 @@ public sealed class MethodInterpreter
             case InvocationExpressionSyntax invocation when SameClassCall.Resolve(invocation, _model) is { } call:
                 Call(call);
                 return;
-            case InvocationExpressionSyntax invocation:
+            case InvocationExpressionSyntax invocation when ThrowHelperParser.TryParse(invocation, _model, _member) is not null:
                 ExecuteGuardHelper(invocation);
+                return;
+            case InvocationExpressionSyntax invocation:
+                // 戻り値を使わない呼び出し（list.Add(x) など）
+                EvaluateInvocation(invocation);
                 return;
             case AssignmentExpressionSyntax assignment:
                 Assign(assignment);
+                return;
+            case PostfixUnaryExpressionSyntax { Operand: var operand } postfix when postfix.IsKind(SyntaxKind.PostIncrementExpression) || postfix.IsKind(SyntaxKind.PostDecrementExpression):
+                Increment(operand, postfix.IsKind(SyntaxKind.PostIncrementExpression));
+                return;
+            case PrefixUnaryExpressionSyntax { Operand: var operand } prefix when prefix.IsKind(SyntaxKind.PreIncrementExpression) || prefix.IsKind(SyntaxKind.PreDecrementExpression):
+                Increment(operand, prefix.IsKind(SyntaxKind.PreIncrementExpression));
                 return;
             default:
                 throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpressionStatement", Shorten(expression)));
@@ -393,6 +419,12 @@ public sealed class MethodInterpreter
     /// <param name="assignment">代入式</param>
     private void Assign(AssignmentExpressionSyntax assignment)
     {
+        if (assignment.Left is ElementAccessExpressionSyntax element)
+        {
+            AssignElement(assignment, element);
+            return;
+        }
+
         // ほかのオブジェクト（引数のクラスなど）のプロパティへの代入は、入力の値を書き換えるため対象外にする
         if (assignment.Left is MemberAccessExpressionSyntax { Expression: not ThisExpressionSyntax })
         {
@@ -460,9 +492,10 @@ public sealed class MethodInterpreter
                 ? EvaluateConverted(conditional.WhenTrue)
                 : EvaluateConverted(conditional.WhenFalse),
             CastExpressionSyntax cast => ClrOperations.Convert(EvaluateConverted(cast.Expression), _model.GetTypeInfo(cast).Type!),
-            InvocationExpressionSyntax invocation => SameClassCall.Resolve(invocation, _model) is { } call
-                ? Call(call)
-                : KnownMethods.Invoke(invocation, _model, EvaluateConverted),
+            InvocationExpressionSyntax invocation => EvaluateInvocation(invocation),
+            ElementAccessExpressionSyntax elementAccess => ReadElement(elementAccess),
+            ArrayCreationExpressionSyntax or ImplicitArrayCreationExpressionSyntax or CollectionExpressionSyntax => CreateCollection(expression),
+            BaseObjectCreationExpressionSyntax listCreation when IsList(_model.GetTypeInfo(listCreation).Type) => CreateList(listCreation),
             MemberAccessExpressionSyntax { Expression: ThisExpressionSyntax } thisAccess =>
                 ReadState(_model.GetSymbolInfo(thisAccess).Symbol, thisAccess.Name.Identifier.ValueText),
             MemberAccessExpressionSyntax objectAccess when IsObjectMember(objectAccess) => ReadObjectMember(objectAccess),
@@ -656,9 +689,26 @@ public sealed class MethodInterpreter
         }
 
         var op = GetOperator(binary);
-        var left = ClrOperations.Convert(EvaluateConverted(binary.Left), op.Parameters[0].Type);
-        var right = ClrOperations.Convert(EvaluateConverted(binary.Right), op.Parameters[1].Type);
+        var left = ClrOperations.Convert(EvaluateOperand(binary.Left, op), op.Parameters[0].Type);
+        var right = ClrOperations.Convert(EvaluateOperand(binary.Right, op), op.Parameters[1].Type);
         return ClrOperations.Binary(binary.Kind(), op.Parameters[0].Type, left, right);
+    }
+
+    /// <summary>
+    /// 二項演算の片方を評価する。文字列の連結では、列挙型の値（評価中は整数）をメンバー名にする（unit + "=" なら "Meter="）
+    /// </summary>
+    /// <param name="operand">片方の式</param>
+    /// <param name="op">演算子</param>
+    /// <returns>値</returns>
+    private object? EvaluateOperand(ExpressionSyntax operand, IMethodSymbol op)
+    {
+        var value = EvaluateConverted(operand);
+
+        // 型を調べるのは文字列の連結のときだけにする（すべての演算で調べると、呼び出しの多いクラスで重くなる）
+        if (op.ContainingType.SpecialType is not (SpecialType.System_String or SpecialType.System_Object) || value is not (int or long)) return value;
+
+        var type = _model.GetTypeInfo(operand).Type;
+        return type?.TypeKind == TypeKind.Enum ? TextFormatting.ToText(value, type) : value;
     }
 
     /// <summary>
@@ -853,6 +903,302 @@ public sealed class MethodInterpreter
         }
     }
 
+    // ループ1つで繰り返す回数の上限（IDE の解析の中で、終わらないループを回し続けないようにする）
+    private const int MaxIterations = 10_000;
+
+    /// <summary>
+    /// ループ（foreach・for・while・do while）を実行する
+    /// </summary>
+    /// <param name="loop">ループの文</param>
+    /// <returns>実行結果</returns>
+    private Flow ExecuteLoop(StatementSyntax loop)
+    {
+        return loop switch
+        {
+            ForEachStatementSyntax forEach => ExecuteForEach(forEach),
+            ForStatementSyntax forLoop => ExecuteFor(forLoop),
+            WhileStatementSyntax whileLoop => ExecuteWhile(whileLoop.Condition, whileLoop.Statement, checkFirst: true),
+            DoStatementSyntax doLoop => ExecuteWhile(doLoop.Condition, doLoop.Statement, checkFirst: false),
+            _ => throw new UnsupportedSyntaxException(DescribeStatement(loop)),
+        };
+    }
+
+    /// <summary>
+    /// foreach を実行する（List・配列・文字列を順に回す）
+    /// </summary>
+    /// <param name="loop">foreach 文</param>
+    /// <returns>実行結果</returns>
+    private Flow ExecuteForEach(ForEachStatementSyntax loop)
+    {
+        var variable = _model.GetDeclaredSymbol(loop) ?? throw new UnsupportedSyntaxException(Messages.Get("UnsupportedLoop"));
+        foreach (var item in CollectionMethods.Enumerate(EvaluateConverted(loop.Expression), loop))
+        {
+            _variables[variable] = item;
+            var flow = Execute(loop.Statement);
+            if (flow == Flow.Break) break;
+            if (flow == Flow.Return) return flow;
+        }
+
+        return Flow.Normal;
+    }
+
+    /// <summary>
+    /// for を実行する
+    /// </summary>
+    /// <param name="loop">for 文</param>
+    /// <returns>実行結果</returns>
+    private Flow ExecuteFor(ForStatementSyntax loop)
+    {
+        if (loop.Declaration is { } declaration) DeclareVariables(declaration);
+        foreach (var initializer in loop.Initializers) ExecuteExpressionStatement(initializer);
+
+        for (var count = 0; ; count++)
+        {
+            if (MaxIterations < count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTooManySteps"));
+            if (loop.Condition is not null && !ToBoolean(EvaluateConverted(loop.Condition))) break;
+
+            var flow = Execute(loop.Statement);
+            if (flow == Flow.Break) break;
+            if (flow == Flow.Return) return flow;
+            foreach (var incrementor in loop.Incrementors) ExecuteExpressionStatement(incrementor);
+        }
+
+        return Flow.Normal;
+    }
+
+    /// <summary>
+    /// while・do while を実行する
+    /// </summary>
+    /// <param name="condition">条件</param>
+    /// <param name="body">繰り返す文</param>
+    /// <param name="checkFirst">先に条件を見るか（while なら true、do while なら false）</param>
+    /// <returns>実行結果</returns>
+    private Flow ExecuteWhile(ExpressionSyntax condition, StatementSyntax body, bool checkFirst)
+    {
+        for (var count = 0; ; count++)
+        {
+            if (MaxIterations < count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTooManySteps"));
+            if ((checkFirst || 0 < count) && !ToBoolean(EvaluateConverted(condition))) break;
+
+            var flow = Execute(body);
+            if (flow == Flow.Break) break;
+            if (flow == Flow.Return) return flow;
+        }
+
+        return Flow.Normal;
+    }
+
+    /// <summary>
+    /// i++・--i などを実行する（ローカル変数・引数・フィールド）
+    /// </summary>
+    /// <param name="operand">増減する変数</param>
+    /// <param name="increment">増やすなら true、減らすなら false</param>
+    private void Increment(ExpressionSyntax operand, bool increment)
+    {
+        var target = _model.GetSymbolInfo(operand).Symbol;
+        var type = target switch
+        {
+            ILocalSymbol local => local.Type,
+            IParameterSymbol parameter => parameter.Type,
+            IFieldSymbol field => field.Type,
+            IPropertySymbol property => property.Type,
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpressionStatement", Shorten(operand))),
+        };
+        var current = EvaluateConverted(operand);
+        var result = ClrOperations.Binary(
+            increment ? SyntaxKind.AddExpression : SyntaxKind.SubtractExpression, type, current, ClrOperations.Convert(1, type));
+        if (target is ILocalSymbol or IParameterSymbol && _variables.ContainsKey(target)) _variables[target] = result;
+        else if (_state is not null && _state.Contains(target!)) _state.Set(target!, result);
+        else throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldAssignment", Shorten(operand)));
+    }
+
+    /// <summary>
+    /// 呼び出しを評価する（同じクラスの関数、LINQ、List のメソッド、そのほかの標準のメソッドの順に試す）
+    /// </summary>
+    /// <param name="invocation">呼び出し式</param>
+    /// <returns>戻り値</returns>
+    private object? EvaluateInvocation(InvocationExpressionSyntax invocation)
+    {
+        if (SameClassCall.Resolve(invocation, _model) is { } call) return Call(call);
+
+        if (_model.GetSymbolInfo(invocation).Symbol is IMethodSymbol method && invocation.Expression is MemberAccessExpressionSyntax receiver)
+        {
+            var arguments = invocation.ArgumentList.Arguments.Select(a => a.Expression).ToList();
+            if (method.ReducedFrom is not null && CollectionMethods.TryInvokeLinq(
+                method, EvaluateConverted(receiver.Expression), arguments, EvaluateConverted, InvokeLambda, invocation, out var linq))
+            {
+                return linq;
+            }
+
+            if (!method.IsStatic && IsListType(method.ContainingType))
+            {
+                var target = EvaluateConverted(receiver.Expression);
+                if (target is null) throw new GuestThrowException(null, "System.NullReferenceException", null, invocation);
+                if (target is ListValue list && CollectionMethods.TryInvokeList(list, method.Name, arguments.Select(EvaluateConverted).ToList(), invocation, out var value))
+                {
+                    return value;
+                }
+
+                throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMethodCall", invocation.Expression));
+            }
+        }
+
+        return KnownMethods.Invoke(invocation, _model, EvaluateConverted);
+    }
+
+    /// <summary>
+    /// ラムダ式（x => x.Amount など、引数1つのもの）を、引数の値で評価する
+    /// </summary>
+    /// <param name="expression">ラムダ式</param>
+    /// <param name="argument">引数の値</param>
+    /// <returns>ラムダ式の値</returns>
+    private object? InvokeLambda(ExpressionSyntax expression, object? argument)
+    {
+        var parameter = expression switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Parameter,
+            ParenthesizedLambdaExpressionSyntax { ParameterList.Parameters.Count: 1 } parenthesized => parenthesized.ParameterList.Parameters[0],
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpression", Shorten(expression))),
+        };
+        var lambda = (LambdaExpressionSyntax)expression;
+        var symbol = _model.GetDeclaredSymbol(parameter) ?? throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpression", Shorten(expression)));
+        var hadValue = _variables.TryGetValue(symbol, out var previous);
+        _variables[symbol] = argument;
+        try
+        {
+            if (lambda.ExpressionBody is { } body) return EvaluateConverted(body);
+
+            var savedReturn = _returnValue;
+            var flow = Execute(lambda.Block!);
+            var result = _returnValue;
+            _returnValue = savedReturn;
+            return flow == Flow.Return ? result : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedNoReturnPath"));
+        }
+        finally
+        {
+            if (hadValue) _variables[symbol] = previous;
+            else _variables.Remove(symbol);
+        }
+    }
+
+    /// <summary>
+    /// 添字で要素を読む（list[i]・array[i]・text[i]）
+    /// </summary>
+    /// <param name="access">要素アクセス式</param>
+    /// <returns>要素</returns>
+    private object? ReadElement(ElementAccessExpressionSyntax access)
+    {
+        if (access.ArgumentList.Arguments.Count != 1) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpression", Shorten(access)));
+
+        var receiver = EvaluateConverted(access.Expression);
+        var index = EvaluateConverted(access.ArgumentList.Arguments[0].Expression);
+        return receiver switch
+        {
+            null => throw new GuestThrowException(null, "System.NullReferenceException", null, access),
+            ListValue list => CollectionMethods.GetItem(list, index, access),
+            string text when index is int i => 0 <= i && i < text.Length ? text[i] : throw new GuestThrowException(null, "System.IndexOutOfRangeException", null, access),
+            _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedExpression", Shorten(access))),
+        };
+    }
+
+    /// <summary>
+    /// 添字で要素に代入する（list[i] = x、list[i] += x）
+    /// </summary>
+    /// <param name="assignment">代入式</param>
+    /// <param name="access">要素アクセス式</param>
+    private void AssignElement(AssignmentExpressionSyntax assignment, ElementAccessExpressionSyntax access)
+    {
+        if (access.ArgumentList.Arguments.Count != 1 || EvaluateConverted(access.Expression) is not ListValue list)
+        {
+            throw new UnsupportedSyntaxException(Messages.Get("UnsupportedFieldAssignment", Shorten(assignment)));
+        }
+
+        var index = EvaluateConverted(access.ArgumentList.Arguments[0].Expression);
+        if (assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
+        {
+            CollectionMethods.SetItem(list, index, EvaluateConverted(assignment.Right), access);
+            return;
+        }
+
+        var op = GetOperator(assignment);
+        var left = ClrOperations.Convert(CollectionMethods.GetItem(list, index, access), op.Parameters[0].Type);
+        var right = ClrOperations.Convert(EvaluateConverted(assignment.Right), op.Parameters[1].Type);
+        var type = _model.GetTypeInfo(access).Type!;
+        CollectionMethods.SetItem(list, index, ClrOperations.Convert(ClrOperations.Binary(assignment.Kind(), op.Parameters[0].Type, left, right), type), access);
+    }
+
+    /// <summary>
+    /// new List&lt;T&gt;()・new List&lt;T&gt; { a, b }・new List&lt;T&gt;(ほかのコレクション) を評価する
+    /// </summary>
+    /// <param name="creation">生成の式</param>
+    /// <returns>List の値</returns>
+    private ListValue CreateList(BaseObjectCreationExpressionSyntax creation)
+    {
+        var elementType = CollectionMethods.ElementTypeOf(_model.GetTypeInfo(creation).Type);
+        var items = new List<object?>();
+        var arguments = creation.ArgumentList?.Arguments ?? default;
+        if (arguments.Count == 1 && _model.GetTypeInfo(arguments[0].Expression).Type?.SpecialType != SpecialType.System_Int32)
+        {
+            items.AddRange(CollectionMethods.Enumerate(EvaluateConverted(arguments[0].Expression), creation));
+        }
+        else if (1 < arguments.Count)
+        {
+            throw new UnsupportedSyntaxException(Messages.Get("UnsupportedCreation", Shorten(creation)));
+        }
+
+        if (creation.Initializer is { } initializer) items.AddRange(initializer.Expressions.Select(EvaluateConverted));
+        return new ListValue(elementType, items);
+    }
+
+    /// <summary>
+    /// 配列・コレクション式（new[] { a, b }、new int[3]、[a, b]）を評価する
+    /// </summary>
+    /// <param name="expression">式</param>
+    /// <returns>List・配列の値</returns>
+    private ListValue CreateCollection(ExpressionSyntax expression)
+    {
+        var type = _model.GetTypeInfo(expression).ConvertedType ?? _model.GetTypeInfo(expression).Type;
+        var elementType = CollectionMethods.ElementTypeOf(type);
+        var isArray = type is IArrayTypeSymbol;
+        switch (expression)
+        {
+            case ArrayCreationExpressionSyntax { Initializer: { } initializer }:
+                return new ListValue(elementType, initializer.Expressions.Select(EvaluateConverted), isArray: true);
+            case ArrayCreationExpressionSyntax sized when elementType is not null && sized.Type.RankSpecifiers.Count == 1 && sized.Type.RankSpecifiers[0].Sizes.Count == 1:
+                var length = EvaluateConverted(sized.Type.RankSpecifiers[0].Sizes[0]) is int n && 0 <= n && n <= 10_000 ? n : throw new UnsupportedSyntaxException(Messages.Get("UnsupportedCreation", Shorten(expression)));
+                var defaultValue = InstanceState.DefaultValue(elementType);
+                if (ReferenceEquals(defaultValue, InstanceState.Unknown)) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedCreation", Shorten(expression)));
+                return new ListValue(elementType, Enumerable.Repeat(defaultValue, length), isArray: true);
+            case ImplicitArrayCreationExpressionSyntax implicitArray:
+                return new ListValue(elementType, implicitArray.Initializer.Expressions.Select(EvaluateConverted), isArray: true);
+            case CollectionExpressionSyntax collection when collection.Elements.All(e => e is ExpressionElementSyntax):
+                return new ListValue(elementType, collection.Elements.Cast<ExpressionElementSyntax>().Select(e => EvaluateConverted(e.Expression)), isArray);
+            default:
+                throw new UnsupportedSyntaxException(Messages.Get("UnsupportedCreation", Shorten(expression)));
+        }
+    }
+
+    /// <summary>
+    /// List&lt;T&gt; そのものかを判定する
+    /// </summary>
+    /// <param name="type">型</param>
+    /// <returns>List&lt;T&gt; ならtrue</returns>
+    private static bool IsList(ITypeSymbol? type)
+    {
+        return type is INamedTypeSymbol named && named.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.List<T>";
+    }
+
+    /// <summary>
+    /// List のメソッドを持つ型（List&lt;T&gt;・IList&lt;T&gt;・ICollection&lt;T&gt;）かを判定する
+    /// </summary>
+    /// <param name="type">メソッドを持つ型</param>
+    /// <returns>List のメソッドを持つならtrue</returns>
+    private static bool IsListType(ITypeSymbol type)
+    {
+        return type.OriginalDefinition.ToDisplayString() is "System.Collections.Generic.List<T>" or "System.Collections.Generic.IList<T>"
+            or "System.Collections.Generic.ICollection<T>";
+    }
+
     /// <summary>
     /// 入力の値を評価用の値にする（列挙型のメンバーは、元になる整数にして比較・switch で扱えるようにする）
     /// </summary>
@@ -860,6 +1206,12 @@ public sealed class MethodInterpreter
     /// <returns>評価用の値</returns>
     private static object? ToInterpreterValue(object? value)
     {
+        if (value is CollectionValue collection)
+        {
+            // 入力の値は行どうしで共有されるため、書き換えても影響しないよう新しい List にする
+            return new ListValue(collection.ElementType, collection.Items.Select(ToInterpreterValue), collection.CollectionType is IArrayTypeSymbol);
+        }
+
         if (value is not EnumMemberValue member) return value;
 
         var constant = member.Type.GetMembers(member.Name).OfType<IFieldSymbol>().First().ConstantValue;

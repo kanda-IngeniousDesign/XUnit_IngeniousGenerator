@@ -130,7 +130,7 @@ internal static class BoundaryInputGenerator
         var allowNull = AllowsNull(parameter, conditions);
         if (DataTypes.IsEnum(parameter.Type) || DataTypes.TryGetCollectionElement(parameter.Type, out _))
         {
-            var (baseValue, others) = GetStructuredValues(parameter.Type, allowNull, varyCollections);
+            var (baseValue, others) = GetStructuredValues(parameter.Type, allowNull, varyCollections, constants);
             builder.AddData(parameter, baseValue, others);
             return true;
         }
@@ -279,6 +279,26 @@ internal static class BoundaryInputGenerator
     }
 
     /// <summary>
+    /// コレクションの要素の境界値を作る
+    /// </summary>
+    /// <param name="elementType">要素の型</param>
+    /// <param name="baseElement">基準の要素</param>
+    /// <param name="constants">要素と比べている定数・読んでいるプロパティ</param>
+    /// <returns>要素の境界値</returns>
+    private static IEnumerable<object?> GetElementVariations(ITypeSymbol elementType, object? baseElement, List<object> constants)
+    {
+        if (baseElement is ObjectValue baseObject) return GetObjectVariations(baseObject, constants.OfType<PropertyRead>());
+        if (DataTypes.IsEnum(elementType)) return GetEnumMembers(elementType).Skip(1);
+
+        var plain = constants.Where(c => c is not PropertyRead).ToList();
+        if (plain.Count == 0) return [];
+
+        var temporal = TemporalValues.KindOf(elementType);
+        var values = temporal != TemporalKind.None ? TemporalValues.Variations(temporal, plain) : GetVariations(elementType, plain, []);
+        return values.Where(v => !Equals(v, baseElement));
+    }
+
+    /// <summary>
     /// 本体で読んでいるプロパティを1つずつ、比べている定数の前後などの境界値に変えた値を作る
     /// </summary>
     /// <param name="baseObject">基準の値</param>
@@ -334,13 +354,14 @@ internal static class BoundaryInputGenerator
     }
 
     /// <summary>
-    /// 列挙型（全メンバー）・コレクション（要素1件を基準に、空・null）の値を作る
+    /// 列挙型（全メンバー）・コレクション（要素1件を基準に、空・null・要素を境界値に変えたもの）の値を作る
     /// </summary>
     /// <param name="type">引数の型</param>
     /// <param name="allowNull">null を渡してよいか</param>
-    /// <param name="varyCollections">コレクションを空・null にも変えるか</param>
+    /// <param name="varyCollections">コレクションを空・null・要素の境界値にも変えるか</param>
+    /// <param name="constants">コレクションの要素と比べている定数・読んでいるプロパティ</param>
     /// <returns>基準の値と、ほかの値</returns>
-    private static (object? Base, List<object?> Others) GetStructuredValues(ITypeSymbol type, bool allowNull, bool varyCollections)
+    private static (object? Base, List<object?> Others) GetStructuredValues(ITypeSymbol type, bool allowNull, bool varyCollections, List<object> constants)
     {
         if (DataTypes.IsEnum(type))
         {
@@ -359,6 +380,9 @@ internal static class BoundaryInputGenerator
 
         var others = new List<object?> { new CollectionValue(type, elementType, []) };
         if (allowNull) others.Add(null);
+
+        // 要素1件のまま、要素を境界値（比べている定数の前後、読んでいるプロパティを変えた値）に変えた値も使う
+        others.AddRange(GetElementVariations(elementType, element, constants).Select(v => (object?)new CollectionValue(type, elementType, [v])));
         return (one, others);
     }
 
@@ -528,7 +552,9 @@ internal static class BoundaryInputGenerator
             if (!constant.HasValue || constant.Value is null) continue;
             if (parameter is null)
             {
-                AddPropertyConstants(result, subject, constant.Value, model, member);
+                // コレクションの要素（v => v >= 100 の v、foreach の変数）と比べていれば、要素の境界値の定数にする
+                if (ElementSource(subject, model, member) is { } source) AddConstant(result, source, constant.Value);
+                else AddPropertyConstants(result, subject, constant.Value, model, member);
                 continue;
             }
 
@@ -554,11 +580,12 @@ internal static class BoundaryInputGenerator
     {
         if (subject is not MemberAccessExpressionSyntax memberAccess) return;
 
-        var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member);
+        // コレクションの要素のプロパティ（o => o.Amount > 100 など）は、要素のクラスのプロパティの定数として、コレクションの引数に記録する
+        var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member) ?? ElementSource(memberAccess.Expression, model, member);
         if (parameter is null) return;
 
         // クラス（DTO）の引数のプロパティ（c.Age >= 20 など）は、そのプロパティの境界値の定数として記録する
-        if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol property && ObjectTypes.TryGetShape(parameter.Type, out _, out _))
+        if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol property && IsObjectOrObjects(parameter.Type))
         {
             AddConstant(result, parameter, new PropertyRead(property, constant));
             return;
@@ -621,12 +648,58 @@ internal static class BoundaryInputGenerator
     {
         foreach (var memberAccess in declaration.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
         {
-            var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member);
+            var parameter = ConditionParser.GetParameter(memberAccess.Expression, model, member) ?? ElementSource(memberAccess.Expression, model, member);
             if (parameter is null || model.GetSymbolInfo(memberAccess).Symbol is not IPropertySymbol property) continue;
-            if (!ObjectTypes.TryGetShape(parameter.Type, out _, out _)) continue;
+            if (!IsObjectOrObjects(parameter.Type)) continue;
 
             AddConstant(result, parameter, new PropertyRead(property, null));
         }
+    }
+
+    /// <summary>
+    /// 組み立てられるクラス（DTO）か、その要素のコレクションかを判定する
+    /// </summary>
+    /// <param name="type">型</param>
+    /// <returns>どちらかならtrue</returns>
+    private static bool IsObjectOrObjects(ITypeSymbol type)
+    {
+        return ObjectTypes.TryGetShape(type, out _, out _)
+            || (DataTypes.TryGetCollectionElement(type, out var element) && ObjectTypes.TryGetShape(element, out _, out _));
+    }
+
+    /// <summary>
+    /// 式が、引数のコレクションの要素（orders.Where(o => ...) の o、foreach (var o in orders) の o）なら、そのコレクションの引数を返す
+    /// </summary>
+    /// <param name="expression">式</param>
+    /// <param name="model">セマンティックモデル</param>
+    /// <param name="member">メソッド</param>
+    /// <returns>コレクションの引数（要素でなければnull）</returns>
+    private static IParameterSymbol? ElementSource(ExpressionSyntax expression, SemanticModel model, IMethodSymbol member)
+    {
+        var syntax = model.GetSymbolInfo(expression).Symbol?.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+        var collection = syntax switch
+        {
+            ForEachStatementSyntax loop => loop.Expression,
+            ParameterSyntax { Parent: SimpleLambdaExpressionSyntax lambda } => ReceiverOf(lambda),
+            ParameterSyntax { Parent.Parent: ParenthesizedLambdaExpressionSyntax lambda } => ReceiverOf(lambda),
+            _ => null,
+        };
+        var parameter = collection is null ? null : ConditionParser.GetParameter(collection, model, member);
+        return parameter is not null && DataTypes.TryGetCollectionElement(parameter.Type, out _) ? parameter : null;
+    }
+
+    /// <summary>
+    /// LINQ に渡したラムダ式の、元のコレクションの式を返す（orders.Where(...).Sum(o => ...) なら orders）
+    /// </summary>
+    /// <param name="lambda">ラムダ式</param>
+    /// <returns>元のコレクションの式（求められなければnull）</returns>
+    private static ExpressionSyntax? ReceiverOf(LambdaExpressionSyntax lambda)
+    {
+        if (lambda.Parent is not ArgumentSyntax { Parent.Parent: InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax access } }) return null;
+
+        var receiver = access.Expression;
+        while (receiver is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax inner }) receiver = inner.Expression;
+        return receiver;
     }
 
     /// <summary>

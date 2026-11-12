@@ -51,6 +51,8 @@ internal static class KnownMethods
         }
 
         var arguments = invocation.ArgumentList.Arguments.Select(a => evaluate(a.Expression)).ToList();
+        if (PathMethods.TryInvoke(method, arguments, invocation, out var path)) return path;
+
         return (method.ContainingType.ToDisplayString(), method.Name, arguments.Count) switch
         {
             ("string", "IsNullOrEmpty", 1) => string.IsNullOrEmpty((string?)arguments[0]),
@@ -79,6 +81,7 @@ internal static class KnownMethods
     {
         if (TemporalMethods.TryReadMember(memberAccess, model.GetSymbolInfo(memberAccess).Symbol, evaluate, out var temporal)) return temporal;
         if (model.GetSymbolInfo(memberAccess).Symbol is IFieldSymbol { Name: nameof(string.Empty), ContainingType.SpecialType: SpecialType.System_String }) return string.Empty;
+        if (PathMethods.TryReadField(model.GetSymbolInfo(memberAccess).Symbol, out var separator)) return separator;
 
         if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol { Name: "Length", ContainingType.SpecialType: SpecialType.System_String })
         {
@@ -86,6 +89,14 @@ internal static class KnownMethods
             return evaluate(memberAccess.Expression) is string s
                 ? s.Length
                 : throw new GuestThrowException(null, "System.NullReferenceException", null, memberAccess);
+        }
+
+        // List・配列の要素数（list.Count・array.Length）
+        if (model.GetSymbolInfo(memberAccess).Symbol is IPropertySymbol { Name: "Count" or "Length", IsStatic: false })
+        {
+            var receiver = evaluate(memberAccess.Expression);
+            if (receiver is null) throw new GuestThrowException(null, "System.NullReferenceException", null, memberAccess);
+            if (CollectionMethods.TryReadMember(receiver, memberAccess.Name.Identifier.ValueText, out var count)) return count;
         }
 
         throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMember", memberAccess));

@@ -31,7 +31,9 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>扱えるならtrue</returns>
     public static bool IsSupportedType(ITypeSymbol type)
     {
-        return DataTypes.IsPrimitive(type) || DataTypes.IsEnum(type);
+        // コレクションは、要素が基本の型・列挙型のもの（期待値を書いて Assert.Equal で要素ごとに比べられる）
+        return DataTypes.IsPrimitive(type) || DataTypes.IsEnum(type)
+            || (DataTypes.TryGetCollectionElement(type, out var element) && (DataTypes.IsPrimitive(element) || DataTypes.IsEnum(element)));
     }
 
     /// <summary>
@@ -58,7 +60,7 @@ internal sealed class ReturnValueTestPlanner
         // 戻り値がない、または時刻・乱数で戻り値が変わるメソッドは、境界値の入力で例外が出ないことだけを確かめる
         var checksOnlyNoThrow = member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType) || dependency is not null;
         var inputs = BoundaryInputGenerator.Generate(
-            member, declaration, model, guards, _context.Options.UseMoq, varyCollections: checksOnlyNoThrow, out var failedParameter,
+            member, declaration, model, guards, _context.Options.UseMoq, varyCollections: true, out var failedParameter,
             construct: _context.Constructor.CreateDependency, instance: _context.Instance);
         if (inputs is null)
         {
@@ -89,6 +91,10 @@ internal sealed class ReturnValueTestPlanner
             return Manual(display, Messages.Get("ReturnNotComputable", reason));
         }
 
+        // スナップショットは、入力ごとの記録ファイル名が重ならないよう、コレクションを空・null に変えない入力で作り直す
+        inputs = BoundaryInputGenerator.Generate(
+            member, declaration, model, guards, _context.Options.UseMoq, varyCollections: false, out _,
+            construct: _context.Constructor.CreateDependency, instance: _context.Instance) ?? inputs;
         var testName = inputs.DataParameters.Count == 0
             ? $"{MemberDisplay.GetTestName(member)}_DefaultInputs_MatchesSnapshot"
             : $"{MemberDisplay.GetTestName(member)}_BoundaryValues_MatchesSnapshot";
@@ -103,7 +109,8 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>対象外の理由（計算を試せる場合はnull）</returns>
     private static string? GetStaticReason(IMethodSymbol member, BoundaryInputs inputs)
     {
-        var structured = inputs.DataParameters.FirstOrDefault(p => !IsSupportedType(p.Type) && !ObjectTypes.TryGetShape(p.Type, out _, out _));
+        var structured = inputs.DataParameters.FirstOrDefault(
+            p => !IsSupportedType(p.Type) && !ObjectTypes.TryGetShape(p.Type, out _, out _) && !DataTypes.TryGetCollectionElement(p.Type, out _));
         if (structured is not null)
         {
             return Messages.Get("ParameterTypeNotComputable", structured.Name, structured.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
@@ -171,6 +178,12 @@ internal sealed class ReturnValueTestPlanner
     /// <returns>期待値（列挙型のメンバーに当たらなければnull）</returns>
     internal static object? ToExpectedValue(ITypeSymbol returnType, object? value)
     {
+        // コレクションは、要素ごとに期待値に書ける値にする
+        if (value is ListValue list)
+        {
+            return DataTypes.TryGetCollectionElement(returnType, out var element) ? list.ToCollectionValue(returnType, element, ToExpectedValue) : null;
+        }
+
         if (!DataTypes.IsEnum(returnType) || value is not (int or long)) return value;
 
         var number = System.Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);

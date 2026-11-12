@@ -27,6 +27,12 @@ internal static class ClrOperations
 
         if (TemporalValues.KindOf(target) != TemporalKind.None && TemporalValues.IsTemporal(value)) return value;
 
+        // List・配列・クラスの値は、インターフェース・基底の型（IEnumerable<T> など）への変換でもそのまま使う
+        if (value is ListValue or ObjectValue && (target.IsReferenceType || value is ObjectValue { Type: var objectType } && SymbolEqualityComparer.Default.Equals(objectType, target)))
+        {
+            return value;
+        }
+
         // 列挙型の値（date.DayOfWeek など）は、元になる整数のまま扱う
         if (target.TypeKind == TypeKind.Enum && value is int or long) return value;
 
