@@ -23,7 +23,7 @@ public sealed class RichInputGenerationTests : IDisposable
                 _log.Add(unit + ":" + values.Length + ":" + (tags?.Count ?? -1) + ":" + (note ?? "(null)"));
             }
 
-            public string Describe(Unit unit, IEnumerable<int> values) => unit + "=" + values.Sum();
+            public string Describe(Unit unit, IEnumerable<int> values) => unit + "=" + values.Average();
         }
         """;
 

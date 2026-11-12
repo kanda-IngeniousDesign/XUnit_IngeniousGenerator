@@ -118,6 +118,11 @@ public sealed class InstanceState
             TestValueKind.String => value.Text,
             TestValueKind.False => false,
             TestValueKind.Data => value.Data,
+            TestValueKind.EmptyArray => new ListValue(((IArrayTypeSymbol)value.Type!).ElementType, [], isArray: true),
+            TestValueKind.EmptyCollection when EmptyCollections.ConcreteName((INamedTypeSymbol)value.Type!) is null or "List" =>
+                new ListValue(CollectionMethods.ElementTypeOf(value.Type), [], EmptyCollections.ConcreteName((INamedTypeSymbol)value.Type!) is null),
+            TestValueKind.New when CollectionMethods.ElementTypeOf(value.Type) is { } element && value.Type!.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.List<T>" =>
+                new ListValue(element, []),
             TestValueKind.EnumMember => new EnumMemberValue(value.Type!, value.Text),
             TestValueKind.Number => type.SpecialType switch
             {
@@ -179,6 +184,8 @@ public sealed class InstanceState
     /// <returns>写し</returns>
     public InstanceState Copy()
     {
-        return new InstanceState(Type, new Dictionary<ISymbol, object?>(_values, SymbolEqualityComparer.Default));
+        // List の値は書き換えられるため、写しを作る
+        var values = _values.ToDictionary(p => p.Key, p => p.Value is ListValue list ? list.Copy() : p.Value, SymbolEqualityComparer.Default);
+        return new InstanceState(Type, values);
     }
 }

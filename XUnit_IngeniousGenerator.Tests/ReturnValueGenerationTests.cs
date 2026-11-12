@@ -159,7 +159,7 @@ public class ReturnValueGenerationTests
 
     [Theory]
     [InlineData("public bool IsOpen(int value) => value == 0 || _lock == null;", "フィールド・プロパティ '_lock' の参照")]
-    [InlineData("public int Sum(int count) { var total = 0; for (var i = 0; i < count; i++) total += i; return total; }", "ループ")]
+    [InlineData("public int Safe(int value) { try { return 10 / value; } catch { return 0; } }", "try 文")]
     [InlineData("public string Show(double value) => value.ToString();", "カルチャに依存する文字列変換")]
     [InlineData("public string Price(double value) => \"\\\\\" + value;", "カルチャに依存する文字列変換")]
     [InlineData("public string Text(int value) => $\"{value:N0}件\";", "文字列補間")]
