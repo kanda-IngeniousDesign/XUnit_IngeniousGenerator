@@ -151,6 +151,7 @@ public sealed class ValueRenderer
             TestValueKind.Default => DefaultExpression(RenderType(value.Type!)),
             TestValueKind.Mock => RenderMock(value.Type!),
             TestValueKind.Data => RenderData(value.Data),
+            TestValueKind.EmptyCollection => RenderEmptyCollection((INamedTypeSymbol)value.Type!),
             _ => RenderEmptyArray((IArrayTypeSymbol)value.Type!),
         };
     }
@@ -284,6 +285,30 @@ public sealed class ValueRenderer
             SyntaxKind.SimpleMemberAccessExpression,
             ObjectCreationExpression(mockType).WithArgumentList(ArgumentList()),
             IdentifierName("Object"));
+    }
+
+    /// <summary>
+    /// コレクションのインターフェースに渡す空のコレクションを作る
+    /// （読み取りだけのもの・IEnumerable は Array.Empty&lt;T&gt;()、IList・ICollection は new List&lt;T&gt;()、
+    /// 辞書は new Dictionary&lt;K, V&gt;()、ISet は new HashSet&lt;T&gt;()）
+    /// </summary>
+    /// <param name="type">コレクションのインターフェース</param>
+    /// <returns>式の構文</returns>
+    private ExpressionSyntax RenderEmptyCollection(INamedTypeSymbol type)
+    {
+        var arguments = type.TypeArguments.Select(t => RenderType(t.WithNullableAnnotation(NullableAnnotation.None))).ToList();
+        var concrete = EmptyCollections.ConcreteName(type);
+        if (concrete is null)
+        {
+            AddNamespace("System");
+            var element = arguments.Count == 0 ? PredefinedType(Token(SyntaxKind.ObjectKeyword)) : arguments[0];
+            var empty = GenericName("Empty").WithTypeArgumentList(TypeArgumentList(SingletonSeparatedList(element)));
+            return InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("Array"), empty));
+        }
+
+        AddNamespace("System.Collections.Generic");
+        var generic = GenericName(concrete).WithTypeArgumentList(TypeArgumentList(SeparatedList(arguments)));
+        return ObjectCreationExpression(generic).WithArgumentList(ArgumentList());
     }
 
     /// <summary>

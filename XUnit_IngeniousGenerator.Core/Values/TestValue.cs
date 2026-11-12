@@ -35,6 +35,9 @@ public enum TestValueKind
     /// <summary>空の配列</summary>
     EmptyArray,
 
+    /// <summary>コレクションのインターフェースに渡す空のコレクション（Array.Empty、new List、new Dictionary など）</summary>
+    EmptyCollection,
+
     /// <summary>Moq のモック（new Mock&lt;T&gt;().Object）</summary>
     Mock,
 

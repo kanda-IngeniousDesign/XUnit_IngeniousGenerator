@@ -152,13 +152,13 @@ public static class TestClassGenerator
             (_, rewritten) => rewritten.WithOperand(rewritten.Operand.WithoutTrailingTrivia()));
 
         // TheoryData の1行（{ 入力, 期待値 }）は、NormalizeWhitespace が縦に展開するため1行にまとめる
-        // （行の中の配列・List の初期化子も1行にする）
+        // （行の中の配列・List の初期化子も1行にする。列が1つの行は、行のあとの改行を残す）
         var theoryDataRows = compilationUnit.DescendantNodes().OfType<InitializerExpressionSyntax>()
             .Where(n => n.IsKind(SyntaxKind.CollectionInitializerExpression) && n.Parent is ObjectCreationExpressionSyntax { Type: GenericNameSyntax { Identifier.ValueText: "TheoryData" } })
             .SelectMany(n => n.Expressions);
         compilationUnit = compilationUnit.ReplaceNodes(theoryDataRows, (original, _) => original is InitializerExpressionSyntax row
             ? ToSingleLine(row)
-            : (ExpressionSyntax)new InitializerCompactor().Visit(original)!);
+            : ((ExpressionSyntax)new InitializerCompactor().Visit(original)!).WithTrailingTrivia(original.GetTrailingTrivia()));
 
         var testClass = compilationUnit.DescendantNodes().OfType<ClassDeclarationSyntax>().First();
 
