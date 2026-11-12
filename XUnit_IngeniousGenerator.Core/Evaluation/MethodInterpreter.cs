@@ -703,9 +703,12 @@ public sealed class MethodInterpreter
     private object? EvaluateOperand(ExpressionSyntax operand, IMethodSymbol op)
     {
         var value = EvaluateConverted(operand);
-        var concatenates = op.ContainingType.SpecialType is SpecialType.System_String or SpecialType.System_Object;
+
+        // 型を調べるのは文字列の連結のときだけにする（すべての演算で調べると、呼び出しの多いクラスで重くなる）
+        if (op.ContainingType.SpecialType is not (SpecialType.System_String or SpecialType.System_Object) || value is not (int or long)) return value;
+
         var type = _model.GetTypeInfo(operand).Type;
-        return concatenates && type?.TypeKind == TypeKind.Enum && value is int or long ? TextFormatting.ToText(value, type) : value;
+        return type?.TypeKind == TypeKind.Enum ? TextFormatting.ToText(value, type) : value;
     }
 
     /// <summary>
