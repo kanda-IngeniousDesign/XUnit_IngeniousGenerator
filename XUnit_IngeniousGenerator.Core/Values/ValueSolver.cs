@@ -75,6 +75,9 @@ public static class ValueSolver
         if (type.SpecialType == SpecialType.System_Boolean) return [TestValue.False];
         if (type.SpecialType == SpecialType.System_Char) return [TestValue.Char];
 
+        // コレクションのインターフェースは、モックにすると列挙（GetEnumerator）が null を返して例外になるため、空のコレクションを渡す
+        if (EmptyCollections.IsSupported(type)) return [TestValue.OfType(TestValueKind.EmptyCollection, type)];
+
         return type switch
         {
             IArrayTypeSymbol array => [TestValue.OfType(TestValueKind.EmptyArray, array)],

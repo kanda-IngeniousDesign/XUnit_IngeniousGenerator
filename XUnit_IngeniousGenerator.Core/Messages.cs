@@ -5,7 +5,7 @@ namespace XUnit_IngeniousGenerator.Core;
 
 /// <summary>
 /// テストしていない理由・レポートの文言（英語の Messages.resx と、日本語の Messages.ja.resx）。
-/// 警告のメッセージと同じく、IDE の表示言語（CurrentUICulture）で選ぶ
+/// 警告のメッセージと同じく、IDE の表示言語で選ぶ（決め方は UiLanguage）
 /// </summary>
 internal static class Messages
 {
@@ -19,7 +19,7 @@ internal static class Messages
     /// <returns>文言</returns>
     public static string Get(string name, params object?[] arguments)
     {
-        var format = ResourceManager.GetString(name, CultureInfo.CurrentUICulture)
+        var format = ResourceManager.GetString(name, UiLanguage.Current())
             ?? throw new InvalidOperationException($"Message '{name}' is not defined.");
         return arguments.Length == 0 ? format : string.Format(CultureInfo.InvariantCulture, format, arguments);
     }

@@ -168,7 +168,7 @@ public static class DataTypes
     }
 
     /// <summary>
-    /// テストデータとして渡せるコレクションなら、要素の型を返す（要素は基本の型か列挙型に限る）
+    /// テストデータとして渡せるコレクションなら、要素の型を返す（要素は基本の型・列挙型・組み立てられるクラスに限る）
     /// </summary>
     /// <param name="type">型</param>
     /// <param name="elementType">要素の型</param>
@@ -182,7 +182,7 @@ public static class DataTypes
                 when CollectionTypeNames.Contains(named.OriginalDefinition.ToDisplayString()) => named.TypeArguments[0],
             _ => null!,
         };
-        return elementType is not null && (IsPrimitive(elementType) || IsEnum(elementType));
+        return elementType is not null && (IsPrimitive(elementType) || IsEnum(elementType) || ObjectTypes.TryGetShape(elementType, out _, out _));
     }
 
     /// <summary>

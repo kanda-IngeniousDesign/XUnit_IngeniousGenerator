@@ -351,7 +351,9 @@ internal static class BoundaryInputGenerator
         DataTypes.TryGetCollectionElement(type, out var elementType);
         var element = DataTypes.IsEnum(elementType)
             ? GetEnumMembers(elementType).FirstOrDefault()
-            : ToClrValue(FindBaseValue(elementType, []) ?? TestValue.FromString("a"), elementType);
+            : ObjectTypes.TryGetShape(elementType, out var constructor, out var properties)
+                ? CreateBaseObject((INamedTypeSymbol)elementType, constructor, properties)
+                : ToClrValue(FindBaseValue(elementType, []) ?? TestValue.FromString("a"), elementType);
         var one = new CollectionValue(type, elementType, [element]);
         if (!varyCollections) return (one, []);
 
