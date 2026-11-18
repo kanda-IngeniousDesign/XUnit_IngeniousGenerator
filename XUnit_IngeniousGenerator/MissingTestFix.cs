@@ -23,6 +23,8 @@ public class MissingTestFix : CodeFixProvider
 
     public sealed override async Task RegisterCodeFixesAsync(CodeFixContext context)
     {
+        // Fix のタイトルは、csproj で指定された言語（なければ自動で決めた言語）で、ここで決めておく
+        using var language = UiLanguage.Use(MissingTest.LanguageSetting(context.Document.Project.AnalyzerOptions));
         var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
         if (root is null) return;
 
@@ -88,8 +90,14 @@ public class MissingTestFix : CodeFixProvider
             context.RegisterCodeFix(
                 CodeAction.Create(
                     title: GetGenerateTitle(diagnostic.Id, onlyMember, testProject.Name),
-                    createChangedSolution: c => TestDocumentWriter.AddOrMergeTestDocumentAsync(
-                        document, targetType, semanticModel.Compilation, testProjectId, onlyMember, c),
+                    createChangedSolution: c =>
+                    {
+                        // テストの生成は Fix を選んだときに別の流れで動くため、そこでも言語を指定する
+                        using (UiLanguage.Use(MissingTest.LanguageSetting(document.Project.AnalyzerOptions)))
+                        {
+                            return TestDocumentWriter.AddOrMergeTestDocumentAsync(document, targetType, semanticModel.Compilation, testProjectId, onlyMember, c);
+                        }
+                    },
                     equivalenceKey: $"GenerateTest:{diagnostic.Id}:{testProject.Name}"),
                 diagnostic);
         }

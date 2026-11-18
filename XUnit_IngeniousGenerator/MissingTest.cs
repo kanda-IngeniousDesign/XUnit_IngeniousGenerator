@@ -32,6 +32,16 @@ public class MissingTest : DiagnosticAnalyzer
     /// <summary>テストプロジェクトのフォルダ（targets で既定値を設定し、csproj で上書きできる）</summary>
     public const string TestProjectDirectoryKey = "build_property.IngeniousTestProjectDirectory";
 
+    /// <summary>
+    /// csproj で指定された、理由・Fix のタイトルの言語（IngeniousLanguage）を返す
+    /// </summary>
+    /// <param name="options">解析の設定</param>
+    /// <returns>言語（指定がなければnull）</returns>
+    public static string? LanguageSetting(AnalyzerOptions options)
+    {
+        return options.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue(UiLanguage.SettingKey, out var value) ? value : null;
+    }
+
     // テストフレームワークを参照しているプロジェクトはテストプロジェクトとみなし、検知の対象外にする
     private static readonly string[] TestFrameworkAssemblies = ["xunit.core", "xunit.v3.core", "nunit.framework", "Microsoft.VisualStudio.TestPlatform.TestFramework"];
 
@@ -89,7 +99,11 @@ public class MissingTest : DiagnosticAnalyzer
         var testFile = FindAdditionalFile(context.Options, TestFileMetadataKey, f => Path.GetFileNameWithoutExtension(f.Path) == testClassName);
         var testFileText = testFile?.GetText(context.CancellationToken)?.ToString();
         var existingTestNames = testFileText is null ? [] : TestCoverageInspector.CollectTestNames(testFileText, testClassName);
-        var coverages = TestCoverageInspector.Inspect(symbol, context.Compilation, GetGenerationOptions(context), existingTestNames);
+        IReadOnlyList<MemberCoverage> coverages;
+        using (UiLanguage.Use(LanguageSetting(context.Options)))
+        {
+            coverages = TestCoverageInspector.Inspect(symbol, context.Compilation, GetGenerationOptions(context), existingTestNames);
+        }
 
         // テストファイルがなければクラス名に1つだけ出す（partial クラスは最初の宣言にだけ報告する）。
         // Fix で、生成できるテストと、生成できない関数のスキップのテスト（テストしていない一覧）をまとめて作る

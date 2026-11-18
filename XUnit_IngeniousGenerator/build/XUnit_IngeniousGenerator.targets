@@ -29,6 +29,8 @@
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="IngeniousTestFile" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="IngeniousTestProjectFile" />
     <CompilerVisibleProperty Include="IngeniousTestProjectDirectory" />
+    <!-- テストしていない理由・Fix のタイトルの言語（ja・en など）。指定しなければ IDE・OS の表示言語で自動で決める -->
+    <CompilerVisibleProperty Include="IngeniousLanguage" />
   </ItemGroup>
 
 </Project>

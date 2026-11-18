@@ -51,7 +51,7 @@ public class LocalizedReasonTests
     public void Resolve_VisualStudioLanguage_WinsOverThreadCulture()
     {
         // Visual Studio が Fix を計算するスレッドは英語でも、VS が日本語なら VSLANG=1041 で日本語にする
-        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "1041" : null, CultureInfo.GetCultureInfo("en-US"));
+        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "1041" : null, CultureInfo.GetCultureInfo("en-US"), CultureInfo.GetCultureInfo("en-US"));
 
         Assert.Equal("ja-JP", culture.Name);
     }
@@ -59,30 +59,45 @@ public class LocalizedReasonTests
     [Fact]
     public void Resolve_NoVisualStudioLanguage_UsesThreadCulture()
     {
-        var culture = Core.UiLanguage.Resolve(_ => null, CultureInfo.GetCultureInfo("en-US"));
+        var culture = Core.UiLanguage.Resolve(_ => null, CultureInfo.GetCultureInfo("en-US"), CultureInfo.GetCultureInfo("en-US"));
 
         Assert.Equal("en-US", culture.Name);
     }
 
     [Fact]
+    public void Resolve_EnglishThreadOnJapaneseOs_UsesOsLanguage()
+    {
+        // VS の別のプロセスのスレッドが英語でも、日本語の Windows なら日本語にする
+        var culture = Core.UiLanguage.Resolve(_ => null, CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("ja-JP"));
+
+        Assert.Equal("ja-JP", culture.Name);
+    }
+
+    [Fact]
+    public void Use_Setting_WinsOverEverything()
+    {
+        using (Core.UiLanguage.Use("en"))
+        {
+            Assert.Equal("en", Core.UiLanguage.Current().Name);
+        }
+
+        Assert.Equal("ja-JP", Core.UiLanguage.Current().Name);
+    }
+
+    [Fact]
     public void Resolve_InvalidVisualStudioLanguage_UsesThreadCulture()
     {
-        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "abc" : null, CultureInfo.GetCultureInfo("ja-JP"));
+        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "abc" : null, CultureInfo.GetCultureInfo("ja-JP"), CultureInfo.GetCultureInfo("en-US"));
 
         Assert.Equal("ja-JP", culture.Name);
     }
 
     private static Core.GenerationResult GenerateWith(string culture)
     {
-        var original = CultureInfo.CurrentUICulture;
-        try
+        // csproj の IngeniousLanguage で言語を指定した場合と同じ
+        using (Core.UiLanguage.Use(culture))
         {
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(culture);
             return TargetCompiler.Generate(Source, "Sample.Store");
-        }
-        finally
-        {
-            CultureInfo.CurrentUICulture = original;
         }
     }
 }

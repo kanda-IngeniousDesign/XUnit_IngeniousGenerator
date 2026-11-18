@@ -32,9 +32,14 @@ public sealed class CreateTestProjectCodeAction : CodeAction
         _testProjectDirectory = testProjectDirectory;
         _useFileEdits = useFileEdits;
         _onlyMember = onlyMember;
+
+        // タイトルは IDE があとで読むため、言語を指定した Fix の登録の中で決めておく
+        _title = Resources.Get("Fix_CreateTestProject", TestProjectName);
     }
 
-    public override string Title => Resources.Get("Fix_CreateTestProject", TestProjectName);
+    private readonly string _title;
+
+    public override string Title => _title;
 
     // 一括適用（すべて修正）で複数のプロジェクト作成が同時に走らないよう、等価キーを持たせない
     public override string? EquivalenceKey => null;
@@ -64,7 +69,12 @@ public sealed class CreateTestProjectCodeAction : CodeAction
     /// <returns>操作</returns>
     private IEnumerable<CodeActionOperation> BuildOperations(bool addToSolution)
     {
-        var (relativePath, code) = TestDocumentWriter.GenerateForNewProject(_document, _targetType, _compilation, TestProjectName, _onlyMember);
+        string relativePath;
+        string code;
+        using (UiLanguage.Use(MissingTest.LanguageSetting(_document.Project.AnalyzerOptions)))
+        {
+            (relativePath, code) = TestDocumentWriter.GenerateForNewProject(_document, _targetType, _compilation, TestProjectName, _onlyMember);
+        }
         var productProjectPath = _document.Project.FilePath!;
 
         // VS Code（C# Dev Kit）では Solution.FilePath が内部で生成したソリューションを指すため使わず、
