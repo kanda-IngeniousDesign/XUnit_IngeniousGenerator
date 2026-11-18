@@ -187,6 +187,32 @@ public class MissingTestTests
     }
 
     /// <summary>
+    /// csproj の IngeniousLanguage（ここでは en）で、IDE の表示言語にかかわらず、理由をその言語で書くことを確認する
+    /// </summary>
+    [Fact]
+    public async Task LanguageSetting_WritesReasonInThatLanguage()
+    {
+        var test = CreateTest("""
+            using System.IO;
+            public class Loader
+            {
+                public string {|#0:Load|}(string path) => File.ReadAllText(path);
+            }
+            """, EnableRule + """
+
+            build_property.IngeniousLanguage = en
+
+            [/0/Product.Tests/LoaderTests.cs]
+            build_metadata.AdditionalFiles.IngeniousTestFile = true
+            """);
+        test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { }"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.NotGeneratableRule).WithLocation(0)
+            .WithArguments("Load", "'File' depends on the external environment (files, databases, network), so it is not covered by unit tests (check it in UI tests)"));
+
+        await test.RunAsync();
+    }
+
+    /// <summary>
     /// テストファイルがなければ、自動生成できない関数しかないクラスにも、クラス名に TEST001 が出ることを確認する
     /// （Fix でテストファイルを作り、テストしていない一覧に載せる。public でないクラスも同じ）
     /// </summary>
