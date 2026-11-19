@@ -41,7 +41,11 @@ public static class TestClassGenerator
         var testClassName = targetType.Name + TestClassSuffix;
         var renderer = new ValueRenderer();
         var context = new GenerationContext(compilation, options ?? GenerationOptions.None);
-        var tests = PlanTests(targetType, context, out var sut);
+
+        // テストを生成するときだけ、条件の網羅を目指して入力を追加する（警告の判定では時間がかかるため行わない）
+        List<PlannedTest> tests;
+        SutPlan sut;
+        using (ConditionCoverageSearch.Enable()) tests = PlanTests(targetType, context, out sut);
 
         // 文字列連結ではなくSyntaxFactoryで組み立て、整形はRoslynに任せる
         var builder = new TestSyntaxBuilder(targetType, renderer);
