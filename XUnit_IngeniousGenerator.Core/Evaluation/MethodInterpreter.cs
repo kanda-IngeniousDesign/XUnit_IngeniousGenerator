@@ -57,11 +57,13 @@ public sealed class MethodInterpreter
     /// <param name="member">メソッドのシンボル</param>
     /// <param name="arguments">引数の値（引数の順）</param>
     /// <param name="state">テスト対象のインスタンスを作った直後の状態（なければフィールドを読む式は計算しない）</param>
+    /// <param name="tracker">判定・要素の成立を記録する先（条件の網羅を目指すとき）</param>
     /// <returns>評価結果</returns>
     public static EvaluationResult Evaluate(
-        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments, InstanceState? state = null)
+        BaseMethodDeclarationSyntax declaration, SemanticModel model, IMethodSymbol member, IReadOnlyList<object?> arguments, InstanceState? state = null,
+        ConditionTracker? tracker = null)
     {
-        var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget());
+        var interpreter = new MethodInterpreter(model, member, ImmutableHashSet.Create<IMethodSymbol>(SymbolEqualityComparer.Default), new StepBudget { Tracker = tracker });
         for (var i = 0; i < arguments.Count; i++) interpreter._variables[member.Parameters[i]] = ToInterpreterValue(arguments[i]);
 
         // 入力ごとに写しを使い、関数の中での書き込みがほかの入力の評価に影響しないようにする
@@ -282,7 +284,7 @@ public sealed class MethodInterpreter
     /// <returns>実行結果</returns>
     private Flow ExecuteIf(IfStatementSyntax ifStatement)
     {
-        if (ToBoolean(EvaluateConverted(ifStatement.Condition))) return Execute(ifStatement.Statement);
+        if (EvaluateDecision(ifStatement.Condition)) return Execute(ifStatement.Statement);
         return ifStatement.Else is null ? Flow.Normal : Execute(ifStatement.Else.Statement);
     }
 
@@ -465,6 +467,7 @@ public sealed class MethodInterpreter
     private object? EvaluateConverted(ExpressionSyntax expression)
     {
         var value = Evaluate(expression);
+        _budget.Tracker?.Record(expression, value);
         var typeInfo = _model.GetTypeInfo(expression);
         if (typeInfo.ConvertedType is null || SymbolEqualityComparer.Default.Equals(typeInfo.Type, typeInfo.ConvertedType)) return value;
 
@@ -488,7 +491,7 @@ public sealed class MethodInterpreter
             IdentifierNameSyntax identifier => ReadVariable(identifier),
             BinaryExpressionSyntax binary => EvaluateBinary(binary),
             PrefixUnaryExpressionSyntax unary => EvaluateUnary(unary),
-            ConditionalExpressionSyntax conditional => ToBoolean(EvaluateConverted(conditional.Condition))
+            ConditionalExpressionSyntax conditional => EvaluateDecision(conditional.Condition)
                 ? EvaluateConverted(conditional.WhenTrue)
                 : EvaluateConverted(conditional.WhenFalse),
             CastExpressionSyntax cast => ClrOperations.Convert(EvaluateConverted(cast.Expression), _model.GetTypeInfo(cast).Type!),
@@ -955,7 +958,7 @@ public sealed class MethodInterpreter
         for (var count = 0; ; count++)
         {
             if (MaxIterations < count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTooManySteps"));
-            if (loop.Condition is not null && !ToBoolean(EvaluateConverted(loop.Condition))) break;
+            if (loop.Condition is not null && !EvaluateDecision(loop.Condition)) break;
 
             var flow = Execute(loop.Statement);
             if (flow == Flow.Break) break;
@@ -978,7 +981,7 @@ public sealed class MethodInterpreter
         for (var count = 0; ; count++)
         {
             if (MaxIterations < count) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedTooManySteps"));
-            if ((checkFirst || 0 < count) && !ToBoolean(EvaluateConverted(condition))) break;
+            if ((checkFirst || 0 < count) && !EvaluateDecision(condition)) break;
 
             var flow = Execute(body);
             if (flow == Flow.Break) break;
@@ -1220,6 +1223,28 @@ public sealed class MethodInterpreter
     }
 
     /// <summary>
+    /// 判定（if・三項演算子・ループの条件）を評価し、要素ごとの成立と結果を記録する
+    /// </summary>
+    /// <param name="condition">条件式</param>
+    /// <returns>判定の結果</returns>
+    private bool EvaluateDecision(ExpressionSyntax condition)
+    {
+        var tracker = _budget.Tracker;
+        tracker?.Begin(condition);
+        try
+        {
+            var outcome = ToBoolean(EvaluateConverted(condition));
+            tracker?.End(outcome);
+            return outcome;
+        }
+        catch
+        {
+            tracker?.Abort();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 値を bool として取り出す
     /// </summary>
     /// <param name="value">値</param>
@@ -1280,6 +1305,9 @@ public sealed class MethodInterpreter
     {
         private const int MaxSteps = 100_000;
         private int _used;
+
+        /// <summary>判定・要素の成立を記録する先（記録しない場合はnull）</summary>
+        public ConditionTracker? Tracker { get; set; }
 
         /// <summary>
         /// 式を1つ計算した分を数え、上限を超えたら評価をやめる

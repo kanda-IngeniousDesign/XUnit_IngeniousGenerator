@@ -138,8 +138,23 @@ internal sealed class ReturnValueTestPlanner
     private ReturnValueTestCase? TryCompute(
         IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, BoundaryInputs inputs, out string? reason)
     {
-        var rows = new List<(IReadOnlyList<object?>, object?)>(inputs.Rows.Count);
-        foreach (var input in inputs.Rows)
+        // 判定の成立・不成立や、複合条件の要素ごとの変化が足りなければ、それを満たす入力を加える
+        var candidates = inputs.Rows;
+        if (ConditionCoverageSearch.Enabled)
+        {
+            var constants = declaration.DescendantNodes().OfType<LiteralExpressionSyntax>()
+                .Select(l => model.GetConstantValue(l)).Where(c => c.HasValue && c.Value is int or long)
+                .Select(c => System.Convert.ToInt64(c.Value, System.Globalization.CultureInfo.InvariantCulture)).Distinct().ToList();
+            candidates = ConditionCoverageSearch.Improve(candidates, constants, input =>
+            {
+                var tracker = new ConditionTracker();
+                var evaluated = MethodInterpreter.Evaluate(declaration, model, member, input, _context.Instance, tracker);
+                return (evaluated, tracker.Observations);
+            });
+        }
+
+        var rows = new List<(IReadOnlyList<object?>, object?)>(candidates.Count);
+        foreach (var input in candidates)
         {
             var result = MethodInterpreter.Evaluate(declaration, model, member, input, _context.Instance);
             reason = result switch

@@ -143,10 +143,12 @@ internal sealed class LaterThrowTestPlanner
         IMethodSymbol member, BaseMethodDeclarationSyntax declaration, SemanticModel model, BoundaryInputs inputs, HashSet<SyntaxNode> sites, HashSet<SyntaxNode> covered,
         InstanceState? instance)
     {
-        var baseRow = inputs.Rows[0];
+        // 例外テストで無効にする引数は1つだけにする。基準の入力そのものが例外になる場合は、例外にならない入力を基準に選び直す
+        var rows = RebaseOnPassingRow(inputs.Rows, row => MethodInterpreter.Evaluate(declaration, model, member, row, instance).Kind == EvaluationKind.Returned);
+        var baseRow = rows[0];
         var coveredConditions = new HashSet<(SyntaxNode Site, int Condition)>();
         var testNames = new HashSet<string>();
-        foreach (var row in inputs.Rows)
+        foreach (var row in rows)
         {
             // 評価できない入力があっても、ほかの入力では throw に到達する場合がある（コンストラクタのフィールドへの代入など）
             var result = MethodInterpreter.Evaluate(declaration, model, member, row, instance);
@@ -166,6 +168,34 @@ internal sealed class LaterThrowTestPlanner
             foreach (var index in conditions) coveredConditions.Add((result.ThrowSite, index));
             yield return new ComputedExceptionTestCase(member, testName, result.ExceptionType, result.ParamName, row);
         }
+    }
+
+    /// <summary>
+    /// 基準の入力（先頭）が例外になる場合、例外にならない入力を基準にして、そこから引数を1つずつ変えた入力を作り直す。
+    /// 引数ごとの値は、もとの入力に出てくる値を使う。例外にならない入力がなければ、もとの入力のまま返す
+    /// </summary>
+    /// <param name="rows">入力</param>
+    /// <param name="passes">例外にならないかを判定する処理</param>
+    /// <returns>基準の入力が例外にならない入力の一覧</returns>
+    internal static IReadOnlyList<object?[]> RebaseOnPassingRow(IReadOnlyList<object?[]> rows, Func<object?[], bool> passes)
+    {
+        if (rows.Count == 0 || passes(rows[0])) return rows;
+
+        var passing = rows.FirstOrDefault(passes);
+        if (passing is null) return rows;
+
+        var rebased = new List<object?[]> { passing };
+        for (var i = 0; i < passing.Length; i++)
+        {
+            foreach (var value in rows.Select(r => r[i]).Distinct().Where(v => !Equals(v, passing[i])))
+            {
+                var row = (object?[])passing.Clone();
+                row[i] = value;
+                if (!rebased.Any(r => r.SequenceEqual(row))) rebased.Add(row);
+            }
+        }
+
+        return rebased;
     }
 
     /// <summary>

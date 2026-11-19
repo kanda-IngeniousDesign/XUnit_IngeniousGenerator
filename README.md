@@ -21,6 +21,7 @@ Generated tests:
 
 - Exception tests from argument guards (`if (...) throw`, `ThrowIf...`, `?? throw`), including `ParamName` checks. Guard conditions may use `is` patterns (`x is < 0 or > 10`, `s is null or ""`, `x is not (>= 1 and <= 3)`). Guards that compare arguments with each other (`if (min > max) throw`, `ThrowIfGreaterThan(from, to)`) or use an argument's property (`if (date.Year < 1900) throw`, `text.Length > 3`) are evaluated statically to find an input that throws, in methods and constructors; the instance under test is created with arguments that pass such constructor guards.
 - Boundary-value tests whose expected values are computed from the code by a static interpreter, including string interpolation and `string.Join` / `Concat` / `Format` with culture-independent values (strings, integers, enums), enum parameters and return values, fields and properties of the instance under test (their values right after the constructor, computed from field initializers and the constructor body), class (DTO) arguments built with an object initializer or a constructor (`new Customer { Age = 19 }`; only the properties the method reads are varied), lists, arrays, loops (`foreach`, `for`, `while`) and common LINQ methods (`Where`, `Select`, `Sum`, `Count`, `Any`, `First`, ...) with collections varied to empty and to elements around the values they are compared with, `Path.Combine` / `GetFileName` and similar path operations (with the directory separator of the OS that generated the test), the midpoint between boundaries and each type's extremes (`int.MinValue`, `int.MaxValue`, `null`, ...). Runtime exceptions at the extremes (for example `NullReferenceException`) are recorded as exception tests. `DateTime`, `DateOnly` and `TimeSpan` are supported: dates compared in the code (`date < new DateTime(2026, 6, 1)`) are tested one day and one second before and after, and comparisons of `date.Year`, `date.Month`, `date.DayOfWeek` and similar properties produce matching dates.
+- Inputs aimed at condition coverage: when the boundary values leave a decision (`if`, `?:`, loop condition) always true or always false, or leave an element of `&&` / `||` without a pair of inputs where only that element changes and the result changes (MC/DC), inputs that fill the gap are searched for among the values already used, the numeric constants in the method and their neighbors, and added to the `Assert.Equal` tests. Exception tests make exactly one argument invalid.
 - Snapshot tests (Verify) for values that can't be computed statically, with dependencies mocked by Moq (when the test project references Verify.Xunit and Moq). Each snapshot test has a comment saying why the value could not be computed statically.
 - No-exception checks for methods without a return value.
 
@@ -29,6 +30,15 @@ Review the generated tests before committing them. Expected values are what the 
 - `Assert.Equal` tests: check that the expected values (the last column of `InlineData` / `TheoryData`) match the specification.
 - Verify tests: the first run creates the `.verified.txt` files automatically. Check their contents against the specification before committing them.
 - When a later run produces a different result, Verify writes a `.received.txt` file and the test fails. Compare the two; accept the new result if the change is intended, otherwise fix the code. On CI (build servers), results are never accepted automatically, so a missing `.verified.txt` fails the build.
+
+To check how much of the code the tests run, the CLI in this repository runs the test project with code coverage (Microsoft Code Coverage, included in `Microsoft.NET.Test.Sdk`; no extra package) and prints the line and branch coverage of each method with the lines not run:
+
+```shell
+dotnet run --project XUnit_IngeniousGenerator.Cli -- coverage --project path/to/Product.Tests.csproj [--threshold 80]
+dotnet run --project XUnit_IngeniousGenerator.Cli -- coverage --report path/to/coverage.cobertura.xml
+```
+
+With `--threshold`, the command exits with code 2 when the line coverage is below the given percentage.
 
 The test project is looked up next to the project as `<ProjectName>.Tests` by default; set the `IngeniousTestProjectDirectory` property in the csproj to use another folder. Product code is never rewritten.
 
@@ -48,11 +58,15 @@ C#のコードから、xUnitのテストコードをRoslynだけで決定的に�
 - record と構造体は解析の対象外です。既存のテストメソッドは変更しません（本物のテストを追加した関数のスキップのテストだけは置き換えます）。
 - オーバーロードは、テスト名に引数の型を付けて区別します（`Add_Int_...`、`Add_Decimal_...`）。
 
+生成するテストの入力は、条件の網羅も目指します。境界値だけでは、判定（`if`・三項演算子・ループの条件）がいつも成立またはいつも不成立になる場合や、`&&`・`||` の要素ごとに「その要素だけが変わって結果が変わる」入力の組（MC/DC）がない場合は、すでに使っている値・関数の中の数値の定数とその前後から、足りない入力を探して `Assert.Equal` のテストに加えます。例外のテストでは、無効な引数を1つだけにします。
+
 生成されたテストは、コミットする前に必ず人が確認してください。期待値は「今のコードの実行結果」で、仕様として正しいかは保証しません。コードにバグがあれば、そのバグを正解とするテストが生成されます。
 
 - `Assert.Equal` のテスト：期待値（`InlineData`・`TheoryData` の最後の列）が仕様どおりかを確認します。
 - Verify のテスト：初回の実行で `.verified.txt` が自動で作られます。その中身が仕様どおりかを確認してからコミットします。
 - 2回目以降に結果が変わると、`.received.txt` ができてテストが失敗します。差分を見て、正しい変更なら承認し、誤りならコードを直します。CI（ビルドサーバー）では自動で承認しないため、`.verified.txt` のコミット漏れは失敗として見つかります。
+
+テストがコードのどこまでを通っているかは、このリポジトリの CLI で確かめられます。テストプロジェクトをカバレッジを集めながら実行し（`Microsoft.NET.Test.Sdk` に含まれる Microsoft Code Coverage を使うので、パッケージの追加は不要です）、関数ごとの行・分岐のカバー率と、通っていない行を表示します（コマンドは上記のとおりです）。`--threshold` を付けると、行のカバー率がその値（%）を下回ったときに終了コード 2 で終わります。
 
 テストプロジェクトは、既定では隣のフォルダの「プロジェクト名.Tests」を探します。別の場所にある場合は、csprojで `IngeniousTestProjectDirectory` プロパティを指定してください。プロダクトコードは書き換えません。
 
