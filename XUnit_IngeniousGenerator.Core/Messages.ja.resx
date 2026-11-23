@@ -294,4 +294,37 @@
   <data name="UnsupportedEnumValue" xml:space="preserve">
     <value>列挙型のメンバーに当たらない値</value>
   </data>
+  <data name="TEST001_Title" xml:space="preserve">
+    <value>テストコードの生成によるテスト漏れの防止</value>
+  </data>
+  <data name="TEST001_Message" xml:space="preserve">
+    <value>クラス '{0}' のテストコード（{0}Tests）が見つかりません。クイックフィックスでテストコードを生成してください。</value>
+  </data>
+  <data name="TEST001_MemberMessage" xml:space="preserve">
+    <value>'{0}' のテストが {1} にありません。クイックフィックスでテストコードを追加してください。</value>
+  </data>
+  <data name="TEST002_Title" xml:space="preserve">
+    <value>自動生成できないテストの明示</value>
+  </data>
+  <data name="TEST002_Message" xml:space="preserve">
+    <value>'{0}' のテストコードは自動生成できません（{1}）。クイックフィックスでテストしていない一覧（スキップのテスト）に載せるか、警告を Ignore してください。</value>
+  </data>
+  <data name="Fix_CreateTestProject" xml:space="preserve">
+    <value>Fix : テストプロジェクト（{0}）を作成してテストコードを生成する</value>
+  </data>
+  <data name="Fix_AddToNotTestedList" xml:space="preserve">
+    <value>Fix : テストしていない一覧（スキップのテスト）に載せる（{0}）</value>
+  </data>
+  <data name="Fix_GenerateTests" xml:space="preserve">
+    <value>Fix : テストコードを生成する（{0}）</value>
+  </data>
+  <data name="Fix_AddMemberTests" xml:space="preserve">
+    <value>Fix : この関数のテストコードを追加する（{0}）</value>
+  </data>
+  <data name="Ignore_NotGeneratable" xml:space="preserve">
+    <value>Ignore : 自動生成できないテストの警告を無視する（別の方法で確認済み）</value>
+  </data>
+  <data name="Ignore_MissingTest" xml:space="preserve">
+    <value>Ignore : テストコードの存在チェックを無視する</value>
+  </data>
 </root>

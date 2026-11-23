@@ -7,7 +7,7 @@ namespace XUnit_IngeniousGenerator.Core;
 /// テストしていない理由・レポートの文言（英語の Messages.resx と、日本語の Messages.ja.resx）。
 /// 警告のメッセージと同じく、IDE の表示言語で選ぶ（決め方は UiLanguage）
 /// </summary>
-internal static class Messages
+public static class Messages
 {
     private static readonly ResourceManager ResourceManager = new("XUnit_IngeniousGenerator.Core.Messages", typeof(Messages).Assembly);
 

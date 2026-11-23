@@ -14,14 +14,21 @@ internal sealed class ReturnValueTestCase : PlannedTest
     /// <param name="member">テスト対象のメソッド</param>
     /// <param name="testName">テストメソッド名</param>
     /// <param name="rows">入力（引数の順）と期待値の組</param>
-    public ReturnValueTestCase(IMethodSymbol member, string testName, IReadOnlyList<(IReadOnlyList<object?> Inputs, object? Expected)> rows)
+    /// <param name="thrownInputs">計算で例外になった入力（実行時の例外なら、例外テストにする）</param>
+    public ReturnValueTestCase(
+        IMethodSymbol member, string testName, IReadOnlyList<(IReadOnlyList<object?> Inputs, object? Expected)> rows,
+        IReadOnlyList<object?[]>? thrownInputs = null)
         : base(member, testName)
     {
         Rows = rows;
+        ThrownInputs = thrownInputs ?? [];
     }
 
     /// <summary>入力（引数の順）と期待値の組</summary>
     public IReadOnlyList<(IReadOnlyList<object?> Inputs, object? Expected)> Rows { get; }
+
+    /// <summary>計算で例外になった入力（0 での割り算など）</summary>
+    public IReadOnlyList<object?[]> ThrownInputs { get; }
 
     /// <summary>
     /// 戻り値テストのメソッド（と、必要ならテストデータのプロパティ）を組み立てる

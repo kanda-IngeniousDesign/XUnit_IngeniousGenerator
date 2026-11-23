@@ -51,7 +51,7 @@ public class MissingTestTests
                 public int Add(int a, int b) => a + b;
             }
             """, EnableRule);
-        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments("Calculator"));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments(ClassMessage("Calculator")));
 
         await test.RunAsync();
     }
@@ -88,7 +88,7 @@ public class MissingTestTests
             }
             """, EnableRuleWithTestFile);
         test.TestState.AdditionalFiles.Add((TestFilePath, "public class CalculatorTests { public void Add_BoundaryValues_ReturnsExpected() { } }"));
-        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments("AddAll", "CalculatorTests"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments(MemberMessage("AddAll", "CalculatorTests")));
 
         await test.RunAsync();
     }
@@ -124,8 +124,8 @@ public class MissingTestTests
             }
             """, EnableRuleWithTestFile);
         test.TestState.AdditionalFiles.Add((TestFilePath, "public class CalculatorTests { public void Add_BoundaryValues_ReturnsExpected() { } }"));
-        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments("Calculator", "CalculatorTests"));
-        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(1).WithArguments("Limit", "CalculatorTests"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments(MemberMessage("Calculator", "CalculatorTests")));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(1).WithArguments(MemberMessage("Limit", "CalculatorTests")));
 
         await test.RunAsync();
     }
@@ -155,7 +155,7 @@ public class MissingTestTests
                 """,
         };
         test.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", EnableRule));
-        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments("Calculator"));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments(ClassMessage("Calculator")));
 
         await test.RunAsync();
     }
@@ -181,7 +181,7 @@ public class MissingTestTests
             """, LoaderTestFileConfig);
         test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { public void LoadListed_NotTested() { } }"));
         test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.NotGeneratableRule).WithLocation(0)
-            .WithArguments("Load", "'File' は外部環境（ファイル・DB・通信など）に依存するため、単体テストでは担保しません（UIオーケストレーター側で確認）"));
+            .WithArguments(NotGeneratableMessage("Load", "'File' は外部環境（ファイル・DB・通信など）に依存するため、単体テストでは担保しません（UIオーケストレーター側で確認）")));
 
         await test.RunAsync();
     }
@@ -207,7 +207,7 @@ public class MissingTestTests
             """);
         test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { }"));
         test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.NotGeneratableRule).WithLocation(0)
-            .WithArguments("Load", "'File' depends on the external environment (files, databases, network), so it is not covered by unit tests (check it in UI tests)"));
+            .WithArguments(NotGeneratableMessageEn("Load", "'File' depends on the external environment (files, databases, network), so it is not covered by unit tests (check it in UI tests)")));
 
         await test.RunAsync();
     }
@@ -228,7 +228,7 @@ public class MissingTestTests
                 public string Load(string path) => File.ReadAllText(path);
             }
             """, EnableRule);
-        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.ClassRule).WithLocation(0).WithArguments("Loader"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.ClassRule).WithLocation(0).WithArguments(ClassMessage("Loader")));
 
         await test.RunAsync();
     }
@@ -252,7 +252,7 @@ public class MissingTestTests
             """, LoaderTestFileConfig);
         test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { }"));
         test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.NotGeneratableRule).WithLocation(0)
-            .WithArguments("Double", "プロパティの get は自動生成の対象外です"));
+            .WithArguments(NotGeneratableMessage("Double", "プロパティの get は自動生成の対象外です")));
 
         await test.RunAsync();
     }
@@ -270,7 +270,7 @@ public class MissingTestTests
             }
             """, LoaderTestFileConfig);
         test.TestState.AdditionalFiles.Add((LoaderTestFilePath, "public class LoaderTests { public void Twice_NotTested() { } }"));
-        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments("Twice", "LoaderTests"));
+        test.ExpectedDiagnostics.Add(Verify.Diagnostic(MissingTest.MemberRule).WithLocation(0).WithArguments(MemberMessage("Twice", "LoaderTests")));
 
         await test.RunAsync();
     }
@@ -307,7 +307,7 @@ public class MissingTestTests
             }
             """, EnableRule);
         test.TestState.AdditionalFiles.Add((TestFilePath, string.Empty));
-        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments("Calculator"));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments(ClassMessage("Calculator")));
 
         await test.RunAsync();
     }
@@ -395,8 +395,8 @@ public class MissingTestTests
                 public Holder(string value) { _value = value; }
             }
             """, EnableRule);
-        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments("MathHelper"));
-        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(1).WithArguments("Greeter"));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments(ClassMessage("MathHelper")));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(1).WithArguments(ClassMessage("Greeter")));
 
         await test.RunAsync();
     }
@@ -418,7 +418,7 @@ public class MissingTestTests
                 public int Sub(int a, int b) => a - b;
             }
             """, EnableRule);
-        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments("Calculator"));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments(ClassMessage("Calculator")));
 
         await test.RunAsync();
     }
@@ -469,9 +469,52 @@ public class MissingTestTests
                 """,
         };
         test.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", EnableRule));
-        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments("Calculator"));
+        test.ExpectedDiagnostics.Add(ClassDiagnostic().WithLocation(0).WithArguments(ClassMessage("Calculator")));
 
         await test.RunAsync();
+    }
+
+    /// <summary>
+    /// TEST001（テストファイルがないクラス）のメッセージ
+    /// </summary>
+    /// <param name="className">クラス名</param>
+    /// <returns>メッセージ</returns>
+    private static string ClassMessage(string className)
+    {
+        return $"クラス '{className}' のテストコード（{className}Tests）が見つかりません。クイックフィックスでテストコードを生成してください。";
+    }
+
+    /// <summary>
+    /// TEST001（テストが不足している関数）のメッセージ
+    /// </summary>
+    /// <param name="member">関数名</param>
+    /// <param name="testClass">テストクラス名</param>
+    /// <returns>メッセージ</returns>
+    private static string MemberMessage(string member, string testClass)
+    {
+        return $"'{member}' のテストが {testClass} にありません。クイックフィックスでテストコードを追加してください。";
+    }
+
+    /// <summary>
+    /// TEST002 のメッセージ
+    /// </summary>
+    /// <param name="member">関数名</param>
+    /// <param name="reason">理由</param>
+    /// <returns>メッセージ</returns>
+    private static string NotGeneratableMessage(string member, string reason)
+    {
+        return $"'{member}' のテストコードは自動生成できません（{reason}）。クイックフィックスでテストしていない一覧（スキップのテスト）に載せるか、警告を Ignore してください。";
+    }
+
+    /// <summary>
+    /// TEST002 のメッセージ（英語）
+    /// </summary>
+    /// <param name="member">関数名</param>
+    /// <param name="reason">理由</param>
+    /// <returns>メッセージ</returns>
+    private static string NotGeneratableMessageEn(string member, string reason)
+    {
+        return $"Tests for '{member}' cannot be generated automatically ({reason}). Add it to the not-tested list (a skipped test) with the Quick Fix, or ignore this warning.";
     }
 
     private static DiagnosticResult ClassDiagnostic()
