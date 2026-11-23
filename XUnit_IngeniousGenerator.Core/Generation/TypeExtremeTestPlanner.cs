@@ -31,7 +31,9 @@ internal static class TypeExtremeTestPlanner
         var exceptions = new List<PlannedTest>();
         var checkOverflow = model.Compilation.Options.CheckOverflow;
 
-        foreach (var row in BuildRows(member, baseRow, checkOverflow).Where(row => !rows.Any(r => r.Inputs.SequenceEqual(row))))
+        // 境界値の入力で起きた実行時の例外（0 での割り算など）も、例外テストにする
+        var extremes = BuildRows(member, baseRow, checkOverflow).Where(row => !rows.Any(r => r.Inputs.SequenceEqual(row)));
+        foreach (var row in test.ThrownInputs.Concat(extremes))
         {
             var result = MethodInterpreter.Evaluate(declaration, model, member, row, instance);
             if (IsUsableReturn(result))
@@ -43,6 +45,8 @@ internal static class TypeExtremeTestPlanner
             else if (IsRuntimeException(result, model.Compilation))
             {
                 var testName = $"{MemberDisplay.GetTestName(member)}_{LaterThrowTestPlanner.DescribeChangedInput(member, baseRow, row)}_Throws{result.ExceptionType!.Name}";
+                if (exceptions.Any(e => e.TestName == testName)) continue;
+
                 exceptions.Add(new ComputedExceptionTestCase(member, testName, result.ExceptionType, null, row));
             }
         }

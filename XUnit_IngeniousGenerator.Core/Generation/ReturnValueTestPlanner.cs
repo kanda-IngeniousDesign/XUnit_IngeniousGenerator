@@ -154,6 +154,7 @@ internal sealed class ReturnValueTestPlanner
         }
 
         var rows = new List<(IReadOnlyList<object?>, object?)>(candidates.Count);
+        var thrown = new List<object?[]>();
         foreach (var input in candidates)
         {
             var result = MethodInterpreter.Evaluate(declaration, model, member, input, _context.Instance);
@@ -166,7 +167,8 @@ internal sealed class ReturnValueTestPlanner
             };
             if (reason is not null) return null;
 
-            // 例外になる入力は、例外テストの対象のため戻り値テストには含めない
+            // 例外になる入力は、例外テストの対象のため戻り値テストには含めない（実行時の例外は、あとで例外テストにする）
+            if (result.Kind == EvaluationKind.Threw) thrown.Add(input);
             if (result.Kind == EvaluationKind.Returned)
             {
                 // 列挙型の戻り値は、評価では整数で持つため、期待値に書けるメンバー（Rank.Gold など）に戻す
@@ -182,7 +184,7 @@ internal sealed class ReturnValueTestPlanner
         }
 
         reason = null;
-        return rows.Count == 0 ? null : new ReturnValueTestCase(member, $"{MemberDisplay.GetTestName(member)}_BoundaryValues_ReturnsExpected", rows);
+        return rows.Count == 0 ? null : new ReturnValueTestCase(member, $"{MemberDisplay.GetTestName(member)}_BoundaryValues_ReturnsExpected", rows, thrown);
     }
 
     /// <summary>

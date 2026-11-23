@@ -45,24 +45,24 @@ public class MissingTest : DiagnosticAnalyzer
     // テストフレームワークを参照しているプロジェクトはテストプロジェクトとみなし、検知の対象外にする
     private static readonly string[] TestFrameworkAssemblies = ["xunit.core", "xunit.v3.core", "nunit.framework", "Microsoft.VisualStudio.TestPlatform.TestFramework"];
 
-    private static readonly LocalizableString Title = CreateLocalStr("TEST001_Title");
-    private static readonly LocalizableString MessageFormat = CreateLocalStr("TEST001_Message");
-    private static readonly LocalizableString MemberMessageFormat = CreateLocalStr("TEST001_MemberMessage");
-    private static readonly LocalizableString NotGeneratableTitle = CreateLocalStr("TEST002_Title");
-    private static readonly LocalizableString NotGeneratableMessageFormat = CreateLocalStr("TEST002_Message");
+    private static readonly LocalizableString Title = Resources.Localizable("TEST001_Title");
+    private static readonly LocalizableString NotGeneratableTitle = Resources.Localizable("TEST002_Title");
+
+    // メッセージは、報告するときに表示言語（csproj の IngeniousLanguage など）で組み立てて、そのまま渡す。
+    // IDE に翻訳させると、VS では IDE が渡す言語が英語になり、設定が効かなかったため
+    private const string MessageFormat = "{0}";
 
     /// <summary>TEST001 のうち、テストファイルがないクラス</summary>
     public static DiagnosticDescriptor ClassRule { get; } = new(
         DiagnosticId, Title, MessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
-
     /// <summary>TEST001 のうち、テストファイルはあるが、関数のテストが不足しているもの</summary>
     public static DiagnosticDescriptor MemberRule { get; } = new(
-        DiagnosticId, Title, MemberMessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
+        DiagnosticId, Title, MessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
     /// <summary>TEST002: テストがなく、自動では生成できない関数</summary>
     public static DiagnosticDescriptor NotGeneratableRule { get; } = new(
-        NotGeneratableDiagnosticId, NotGeneratableTitle, NotGeneratableMessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
+        NotGeneratableDiagnosticId, NotGeneratableTitle, MessageFormat, Category, DiagnosticSeverity.Warning, isEnabledByDefault: true);
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => [ClassRule, MemberRule, NotGeneratableRule];
 
@@ -99,11 +99,9 @@ public class MissingTest : DiagnosticAnalyzer
         var testFile = FindAdditionalFile(context.Options, TestFileMetadataKey, f => Path.GetFileNameWithoutExtension(f.Path) == testClassName);
         var testFileText = testFile?.GetText(context.CancellationToken)?.ToString();
         var existingTestNames = testFileText is null ? [] : TestCoverageInspector.CollectTestNames(testFileText, testClassName);
-        IReadOnlyList<MemberCoverage> coverages;
-        using (UiLanguage.Use(LanguageSetting(context.Options)))
-        {
-            coverages = TestCoverageInspector.Inspect(symbol, context.Compilation, GetGenerationOptions(context), existingTestNames);
-        }
+        // 理由・メッセージは、表示言語（csproj の IngeniousLanguage など）で書く
+        using var language = UiLanguage.Use(LanguageSetting(context.Options));
+        var coverages = TestCoverageInspector.Inspect(symbol, context.Compilation, GetGenerationOptions(context), existingTestNames);
 
         // テストファイルがなければクラス名に1つだけ出す（partial クラスは最初の宣言にだけ報告する）。
         // Fix で、生成できるテストと、生成できない関数のスキップのテスト（テストしていない一覧）をまとめて作る
@@ -113,7 +111,7 @@ public class MissingTest : DiagnosticAnalyzer
             var isFirstDeclaration = first is not null && first.SyntaxTree == tree && first.Span == classDecl.Span;
             if (reportsMissing && isFirstDeclaration && coverages.Any(c => c.Status is CoverageStatus.Generatable or CoverageStatus.NotGeneratable))
             {
-                context.ReportDiagnostic(Diagnostic.Create(ClassRule, classDecl.Identifier.GetLocation(), symbol.Name));
+                context.ReportDiagnostic(Diagnostic.Create(ClassRule, classDecl.Identifier.GetLocation(), Resources.Get("TEST001_Message", symbol.Name)));
             }
 
             return;
@@ -143,11 +141,11 @@ public class MissingTest : DiagnosticAnalyzer
         var name = coverage.Member.MethodKind == MethodKind.Constructor ? coverage.Member.ContainingType.Name : identifier.ValueText;
         if (coverage.Status == CoverageStatus.Generatable && reportsMissing && !node.HasIgnoreComment(DiagnosticId))
         {
-            context.ReportDiagnostic(Diagnostic.Create(MemberRule, identifier.GetLocation(), name, classDecl.Identifier.ValueText + TestClassSuffix));
+            context.ReportDiagnostic(Diagnostic.Create(MemberRule, identifier.GetLocation(), Resources.Get("TEST001_MemberMessage", name, classDecl.Identifier.ValueText + TestClassSuffix)));
         }
         else if (coverage.Status == CoverageStatus.NotGeneratable && reportsNotGeneratable && !node.HasIgnoreComment(NotGeneratableDiagnosticId))
         {
-            context.ReportDiagnostic(Diagnostic.Create(NotGeneratableRule, identifier.GetLocation(), name, string.Join(" / ", coverage.Reasons)));
+            context.ReportDiagnostic(Diagnostic.Create(NotGeneratableRule, identifier.GetLocation(), Resources.Get("TEST002_Message", name, string.Join(" / ", coverage.Reasons))));
         }
     }
 
@@ -206,16 +204,6 @@ public class MissingTest : DiagnosticAnalyzer
             IPropertySymbol property => property,
             _ => null,
         };
-    }
-
-    /// <summary>
-    /// 警告のタイトル・メッセージを、表示言語に合わせて読み込む文字列にする
-    /// </summary>
-    /// <param name="resourceKey">リソースのキー</param>
-    /// <returns>表示言語に合わせて読み込む文字列</returns>
-    private static LocalizableResourceString CreateLocalStr(string resourceKey)
-    {
-        return new LocalizableResourceString(resourceKey, Resources.ResourceManager, typeof(Resources));
     }
 
     /// <summary>

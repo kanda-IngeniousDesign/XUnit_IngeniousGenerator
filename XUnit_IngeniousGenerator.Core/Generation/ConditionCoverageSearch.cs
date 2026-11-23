@@ -15,6 +15,9 @@ internal static class ConditionCoverageSearch
     private const int MaxEvaluations = 400;
     private const int MaxRows = 40;
 
+    // 境界を二分探索するときの、1つの関数で計算する回数の上限
+    private const int MaxBoundaryEvaluations = 400;
+
     [ThreadStatic]
     private static bool _enabled;
 
@@ -46,12 +49,16 @@ internal static class ConditionCoverageSearch
 
         var coverage = new Coverage();
         foreach (var row in rows) coverage.Add(run(row).Observations);
-        if (coverage.Missing() == 0) return rows;
 
+        // 判定が切り替わる境界（ローカル変数を通した比較なども）と、bool の引数の組み合わせは、目標を満たしていても加える
         var kept = rows.ToList();
-        var tried = new List<object?[]>(rows);
+        AddBoundaryRows(kept, constants, run, coverage);
+        AddBooleanPairs(kept, run, coverage);
+        if (coverage.Missing() == 0) return kept;
+
+        var tried = new List<object?[]>(kept);
         var evaluations = 0;
-        foreach (var candidate in Candidates(rows, constants))
+        foreach (var candidate in Candidates(kept, constants))
         {
             if (MaxRows <= kept.Count || MaxEvaluations <= evaluations || coverage.Missing() == 0) break;
             if (tried.Any(r => r.SequenceEqual(candidate))) continue;
@@ -65,6 +72,190 @@ internal static class ConditionCoverageSearch
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// 数値の引数ごとに、ほかの引数を基準の行のままにして、判定の結果（要素の値・成立・例外）が切り替わる境界を二分探索で探し、
+    /// その前後の値の行を加える。ローカル変数を通した比較（var adjusted = score / 2; if (adjusted >= 40)）でも、
+    /// 引数の境界（79 と 80）が分かる。探す範囲は、今の入力の値・関数の中の定数・0 と、それらの10倍程度まで
+    /// （型の端まで探すと、オーバーフローで結果が変わる値まで加わるため）
+    /// </summary>
+    /// <param name="kept">入力（加える先）</param>
+    /// <param name="constants">関数の中の数値の定数</param>
+    /// <param name="run">入力を評価し、結果と判定の記録を返す処理</param>
+    /// <param name="coverage">満たした目標の記録</param>
+    private static void AddBoundaryRows(
+        List<object?[]> kept, IReadOnlyCollection<long> constants, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, Coverage coverage)
+    {
+        var baseRow = kept[0];
+        var evaluations = 0;
+        for (var column = 0; column < baseRow.Length; column++)
+        {
+            var sample = baseRow[column];
+            if (sample is not (int or long or decimal)) continue;
+
+            var cache = new Dictionary<decimal, (string Signature, List<ConditionObservation> Observations)>();
+            (string Signature, List<ConditionObservation> Observations) At(decimal value)
+            {
+                if (cache.TryGetValue(value, out var known)) return known;
+
+                evaluations++;
+                var (result, observations) = run(With(baseRow, (column, FromDecimal(value, sample))));
+                return cache[value] = (DecisionSignature(result, observations), observations);
+            }
+
+            var found = new SortedSet<decimal>();
+            void Bisect(decimal low, decimal high)
+            {
+                if (MaxBoundaryEvaluations <= evaluations || At(low).Signature == At(high).Signature) return;
+                if (high - low <= 1)
+                {
+                    found.Add(low);
+                    found.Add(high);
+                    return;
+                }
+
+                var middle = Math.Floor((low + high) / 2);
+                Bisect(low, middle);
+                Bisect(middle, high);
+            }
+
+            var probes = Probes(kept, column, constants, sample);
+            for (var k = 0; k + 1 < probes.Count; k++) Bisect(probes[k], probes[k + 1]);
+
+            foreach (var value in found)
+            {
+                var row = With(baseRow, (column, FromDecimal(value, sample)));
+                if (MaxRows <= kept.Count || kept.Any(r => r.SequenceEqual(row))) continue;
+
+                kept.Add(row);
+                coverage.Add(At(value).Observations);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 境界を探す値（今の入力の値・関数の中の定数・0 と、その最大の絶対値の10倍＋100 の正負）を、小さい順に返す
+    /// </summary>
+    /// <param name="rows">入力</param>
+    /// <param name="column">列</param>
+    /// <param name="constants">関数の中の数値の定数</param>
+    /// <param name="sample">列の値の例（型を決める）</param>
+    /// <returns>値</returns>
+    private static List<decimal> Probes(List<object?[]> rows, int column, IReadOnlyCollection<long> constants, object sample)
+    {
+        var values = rows.Select(r => r[column]).Where(v => v is int or long or decimal)
+            .Select(v => System.Convert.ToDecimal(v, System.Globalization.CultureInfo.InvariantCulture))
+            .Concat(constants.Select(c => (decimal)c))
+            .Append(0m)
+            .Where(v => Fits(v, sample))
+            .ToList();
+        var reach = values.Max(Math.Abs) * 10 + 100;
+        return values.Append(reach).Append(-reach).Where(v => Fits(v, sample)).Select(Math.Floor).Distinct().OrderBy(v => v).ToList();
+    }
+
+    /// <summary>
+    /// 値が列の型に収まるか（decimal は、探す範囲を ±10^15 までにする）を判定する
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <param name="sample">列の値の例</param>
+    /// <returns>収まるならtrue</returns>
+    private static bool Fits(decimal value, object sample)
+    {
+        return sample switch
+        {
+            int => int.MinValue <= value && value <= int.MaxValue,
+            long => long.MinValue <= value && value <= long.MaxValue,
+            _ => -1_000_000_000_000_000m <= value && value <= 1_000_000_000_000_000m,
+        };
+    }
+
+    /// <summary>
+    /// 値を列の型にする
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <param name="sample">列の値の例</param>
+    /// <returns>列の型の値</returns>
+    private static object FromDecimal(decimal value, object sample)
+    {
+        return sample switch
+        {
+            int => (object)(int)value,
+            long => (object)(long)value,
+            _ => (object)value,
+        };
+    }
+
+    /// <summary>
+    /// 判定の結果をまとめた文字列（判定ごとの最初の評価の、要素の値と成立。例外になったかも含める）。
+    /// ループの条件は、回数で毎回変わらないよう、最初の評価だけを使う
+    /// </summary>
+    /// <param name="result">評価の結果</param>
+    /// <param name="observations">判定の記録</param>
+    /// <returns>文字列</returns>
+    private static string DecisionSignature(EvaluationResult result, List<ConditionObservation> observations)
+    {
+        var builder = new System.Text.StringBuilder(result.Kind == EvaluationKind.Threw ? "!" : string.Empty);
+        var seen = new HashSet<SyntaxNode>();
+        foreach (var observation in observations)
+        {
+            if (seen.Add(observation.Decision)) builder.Append(observation.Decision.SpanStart).Append(':').Append(Coverage.Signature(observation)).Append(';');
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// bool の引数が2つ以上あれば、どの2つの組でも true / false の4通りがそろうように行を加える（ペアワイズ）。
+    /// ほかの引数は基準の行のまま。基準の行がすべて false に偏らないようにするため
+    /// </summary>
+    /// <param name="kept">入力（加える先）</param>
+    /// <param name="run">入力を評価し、結果と判定の記録を返す処理</param>
+    /// <param name="coverage">満たした目標の記録</param>
+    private static void AddBooleanPairs(
+        List<object?[]> kept, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, Coverage coverage)
+    {
+        var baseRow = kept[0];
+        var columns = Enumerable.Range(0, baseRow.Length).Where(i => baseRow[i] is bool).ToList();
+        if (columns.Count < 2) return;
+
+        var pairs = columns.SelectMany((c, k) => columns.Skip(k + 1).Select(d => (I: c, J: d))).ToList();
+        HashSet<(int, int, bool, bool)> Missing() => [.. pairs
+            .SelectMany(p => new[] { (p.I, p.J, false, false), (p.I, p.J, false, true), (p.I, p.J, true, false), (p.I, p.J, true, true) })
+            .Where(m => !kept.Any(r => r[m.Item1] is bool a && a == m.Item3 && r[m.Item2] is bool b && b == m.Item4))];
+
+        for (var missing = Missing(); 0 < missing.Count && kept.Count < MaxRows; missing = Missing())
+        {
+            // 足りない組を1つ入れ、残りの bool は、足りない組をできるだけ多く埋める値にする
+            var (first, second, firstValue, secondValue) = missing.First();
+            var row = (object?[])baseRow.Clone();
+            row[first] = firstValue;
+            row[second] = secondValue;
+            foreach (var column in columns.Where(c => c != first && c != second))
+            {
+                row[column] = CountFilled(missing, row, column, true) >= CountFilled(missing, row, column, false);
+            }
+
+            if (kept.Any(r => r.SequenceEqual(row))) break;
+
+            kept.Add(row);
+            coverage.Add(run(row).Observations);
+        }
+    }
+
+    /// <summary>
+    /// 列を value にしたとき、埋まる足りない組の数を返す（値が決まっている列との組だけを数える）
+    /// </summary>
+    /// <param name="missing">足りない組</param>
+    /// <param name="row">作っている行</param>
+    /// <param name="column">決める列</param>
+    /// <param name="value">値</param>
+    /// <returns>埋まる数</returns>
+    private static int CountFilled(HashSet<(int, int, bool, bool)> missing, object?[] row, int column, bool value)
+    {
+        return missing.Count(m =>
+            (m.Item1 == column && m.Item3 == value && row[m.Item2] is bool b && b == m.Item4)
+            || (m.Item2 == column && m.Item4 == value && row[m.Item1] is bool a && a == m.Item3));
     }
 
     /// <summary>
@@ -261,7 +452,7 @@ internal static class ConditionCoverageSearch
         /// </summary>
         /// <param name="observation">判定の記録</param>
         /// <returns>文字列</returns>
-        private static string Signature(ConditionObservation observation)
+        public static string Signature(ConditionObservation observation)
         {
             return new string(observation.Values.Select(v => v is null ? '-' : v.Value ? 'T' : 'F').ToArray()) + (observation.Outcome ? "T" : "F");
         }

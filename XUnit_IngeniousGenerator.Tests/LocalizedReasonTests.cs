@@ -20,6 +20,16 @@ public class LocalizedReasonTests
         """;
 
     [Fact]
+    public void RuleTitle_IdePassesEnglish_UsesUiLanguageInstead()
+    {
+        // VS は警告のタイトルを、VS が決めた言語（英語になっていた）で取り出すため、渡された言語は使わない
+        using var language = XUnit_IngeniousGenerator.Core.UiLanguage.Use("ja");
+
+        Assert.Equal("テストコードの生成によるテスト漏れの防止", MissingTest.ClassRule.Title.ToString(new CultureInfo("en-US")));
+        Assert.Equal("自動生成できないテストの明示", MissingTest.NotGeneratableRule.Title.ToString(new CultureInfo("en-US")));
+    }
+
+    [Fact]
     public void Generate_EnglishUiCulture_WritesReasonsInEnglish()
     {
         var result = GenerateWith("en-US");
