@@ -19,7 +19,7 @@ public class MissingTestFix : CodeFixProvider
 {
     public sealed override ImmutableArray<string> FixableDiagnosticIds => [MissingTest.DiagnosticId, MissingTest.NotGeneratableDiagnosticId];
 
-    public sealed override FixAllProvider GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
+    public sealed override FixAllProvider GetFixAllProvider() => GenerateTestsFixAllProvider.Instance;
 
     public sealed override async Task RegisterCodeFixesAsync(CodeFixContext context)
     {
@@ -29,17 +29,7 @@ public class MissingTestFix : CodeFixProvider
         if (root is null) return;
 
         var diagnostic = context.Diagnostics.First();
-        MemberDeclarationSyntax? declaration = root.FindToken(diagnostic.Location.SourceSpan.Start).Parent switch
-        {
-            ClassDeclarationSyntax classDecl => classDecl,
-            MethodDeclarationSyntax method => method,
-            ConstructorDeclarationSyntax constructor => constructor,
-            PropertyDeclarationSyntax property => property,
-            IndexerDeclarationSyntax indexer => indexer,
-            OperatorDeclarationSyntax op => op,
-            ConversionOperatorDeclarationSyntax conversion => conversion,
-            _ => null,
-        };
+        var declaration = FindDeclaration(root, diagnostic);
         if (declaration is null) return;
 
         if (diagnostic.Id == MissingTest.NotGeneratableDiagnosticId)
@@ -54,6 +44,45 @@ public class MissingTestFix : CodeFixProvider
     }
 
     /// <summary>
+    /// 警告が出ているクラス・関数の宣言を返す
+    /// </summary>
+    /// <param name="root">ドキュメントの構文木</param>
+    /// <param name="diagnostic">警告</param>
+    /// <returns>宣言（見つからなければnull）</returns>
+    internal static MemberDeclarationSyntax? FindDeclaration(SyntaxNode root, Diagnostic diagnostic)
+    {
+        return root.FindToken(diagnostic.Location.SourceSpan.Start).Parent switch
+        {
+            ClassDeclarationSyntax classDecl => classDecl,
+            MethodDeclarationSyntax method => method,
+            ConstructorDeclarationSyntax constructor => constructor,
+            PropertyDeclarationSyntax property => property,
+            IndexerDeclarationSyntax indexer => indexer,
+            OperatorDeclarationSyntax op => op,
+            ConversionOperatorDeclarationSyntax conversion => conversion,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// テストを生成するクラスと、対象の関数（クラス全体なら null）を返す。入れ子のクラスの関数は、一番外側のクラスのテストファイルで扱う
+    /// </summary>
+    /// <param name="semanticModel">セマンティックモデル</param>
+    /// <param name="declaration">警告が出ているクラス・関数の宣言</param>
+    /// <param name="cancellationToken">キャンセルトークン</param>
+    /// <returns>クラスと対象の関数（分からなければnull）</returns>
+    internal static (INamedTypeSymbol TargetType, ISymbol? OnlyMember)? ResolveTarget(
+        SemanticModel semanticModel, MemberDeclarationSyntax declaration, CancellationToken cancellationToken)
+    {
+        var classDecl = declaration.AncestorsAndSelf().OfType<ClassDeclarationSyntax>().LastOrDefault();
+        if (classDecl is null || semanticModel.GetDeclaredSymbol(classDecl, cancellationToken) is not INamedTypeSymbol targetType) return null;
+        if (declaration is ClassDeclarationSyntax) return (targetType, null);
+
+        var onlyMember = MissingTest.GetMemberSymbol(semanticModel, declaration, cancellationToken);
+        return onlyMember is null ? null : (targetType, onlyMember);
+    }
+
+    /// <summary>
     /// テストコードを生成する Fix を、テストプロジェクトごとに登録する（なければテストプロジェクトを作成する Fix）
     /// </summary>
     /// <param name="context">Fix の登録先</param>
@@ -64,16 +93,9 @@ public class MissingTestFix : CodeFixProvider
         var semanticModel = await document.GetSemanticModelAsync(context.CancellationToken).ConfigureAwait(false);
         if (semanticModel is null) return;
 
-        // 入れ子のクラスの関数は、一番外側のクラスのテストファイルで扱う
-        var classDecl = declaration.AncestorsAndSelf().OfType<ClassDeclarationSyntax>().LastOrDefault();
-        if (classDecl is null || semanticModel.GetDeclaredSymbol(classDecl, context.CancellationToken) is not INamedTypeSymbol targetType) return;
+        if (ResolveTarget(semanticModel, declaration, context.CancellationToken) is not { } target) return;
 
-        ISymbol? onlyMember = null;
-        if (declaration is not ClassDeclarationSyntax)
-        {
-            onlyMember = MissingTest.GetMemberSymbol(semanticModel, declaration, context.CancellationToken);
-            if (onlyMember is null) return;
-        }
+        var (targetType, onlyMember) = target;
 
         var diagnostic = context.Diagnostics.First();
         var testProjects = TestProjectFinder.Find(document.Project.Solution, document.Project);
@@ -98,7 +120,7 @@ public class MissingTestFix : CodeFixProvider
                             return TestDocumentWriter.AddOrMergeTestDocumentAsync(document, targetType, semanticModel.Compilation, testProjectId, onlyMember, c);
                         }
                     },
-                    equivalenceKey: $"GenerateTest:{diagnostic.Id}:{testProject.Name}"),
+                    equivalenceKey: GenerateTestsFixAllProvider.KeyPrefix + diagnostic.Id + ":" + testProject.Name),
                 diagnostic);
         }
     }

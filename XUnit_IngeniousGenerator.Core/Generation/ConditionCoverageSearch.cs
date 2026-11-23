@@ -41,10 +41,13 @@ internal static class ConditionCoverageSearch
     /// <param name="rows">入力</param>
     /// <param name="constants">関数の中の数値の定数（数値の引数の候補に加える）</param>
     /// <param name="run">入力を評価し、結果と判定の記録を返す処理</param>
+    /// <param name="uncovered">探しても見つからなかった入力の説明（テストにコメントで書く）</param>
     /// <returns>入力</returns>
     public static IReadOnlyList<object?[]> Improve(
-        IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run)
+        IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run,
+        out IReadOnlyList<string> uncovered)
     {
+        uncovered = [];
         if (rows.Count == 0) return rows;
 
         var coverage = new Coverage();
@@ -66,11 +69,13 @@ internal static class ConditionCoverageSearch
             tried.Add(candidate);
 
             evaluations++;
+            // 例外になる入力も、判定の成立（ガードの throw など）としては数える（例外のテストで確かめるため、行は戻り値テストに入らない）
             var (result, observations) = run(candidate);
-            if (result.Kind != EvaluationKind.Returned) continue;
+            if (result.Kind is not (EvaluationKind.Returned or EvaluationKind.Threw)) continue;
             if (coverage.AddIfImproves(observations)) kept.Add(candidate);
         }
 
+        uncovered = coverage.DescribeMissing();
         return kept;
     }
 
@@ -233,7 +238,7 @@ internal static class ConditionCoverageSearch
             row[second] = secondValue;
             foreach (var column in columns.Where(c => c != first && c != second))
             {
-                row[column] = CountFilled(missing, row, column, true) >= CountFilled(missing, row, column, false);
+                row[column] = CountFilled(missing, row, column, false) <= CountFilled(missing, row, column, true);
             }
 
             if (kept.Any(r => r.SequenceEqual(row))) break;
@@ -346,6 +351,7 @@ internal static class ConditionCoverageSearch
         // 判定ごとの、要素の値と結果の組（同じ組は1つにまとめる）
         private readonly Dictionary<SyntaxNode, HashSet<string>> _signatures = [];
         private readonly Dictionary<SyntaxNode, int> _atomCounts = [];
+        private readonly Dictionary<SyntaxNode, IReadOnlyList<Microsoft.CodeAnalysis.CSharp.Syntax.ExpressionSyntax>> _atoms = [];
 
         /// <summary>
         /// 判定の記録を加える
@@ -358,7 +364,46 @@ internal static class ConditionCoverageSearch
                 if (!_signatures.TryGetValue(observation.Decision, out var set)) _signatures[observation.Decision] = set = [];
                 set.Add(Signature(observation));
                 _atomCounts[observation.Decision] = observation.Atoms.Count;
+                _atoms[observation.Decision] = observation.Atoms;
             }
+        }
+
+        /// <summary>
+        /// 満たしていない目標を、テストのコメントに書く説明にする（判定の成立・不成立、要素の成立・不成立、要素だけを変えて結果が変わる組）
+        /// </summary>
+        /// <returns>説明</returns>
+        public IReadOnlyList<string> DescribeMissing()
+        {
+            var result = new List<string>();
+            foreach (var pair in _signatures.OrderBy(p => p.Key.SpanStart))
+            {
+                var decision = Shorten(pair.Key);
+                var observed = pair.Value.Select(Parse).ToList();
+                if (!observed.Any(o => o.Outcome)) result.Add(Messages.Get("CoverageNoteDecisionTrue", decision));
+                if (!observed.Any(o => !o.Outcome)) result.Add(Messages.Get("CoverageNoteDecisionFalse", decision));
+                if (_atomCounts[pair.Key] < 2) continue;
+
+                for (var k = 0; k < _atomCounts[pair.Key]; k++)
+                {
+                    var atom = Shorten(_atoms[pair.Key][k]);
+                    if (!observed.Any(o => o.Values[k] == true)) result.Add(Messages.Get("CoverageNoteAtomTrue", atom, decision));
+                    if (!observed.Any(o => o.Values[k] == false)) result.Add(Messages.Get("CoverageNoteAtomFalse", atom, decision));
+                    if (!HasIndependencePair(observed, k)) result.Add(Messages.Get("CoverageNoteIndependence", atom, decision));
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 式を1行にし、長ければ省略する
+        /// </summary>
+        /// <param name="node">式</param>
+        /// <returns>文字列</returns>
+        private static string Shorten(SyntaxNode node)
+        {
+            var text = string.Join(" ", node.ToString().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            return text.Length <= 60 ? text : text.Substring(0, 57) + "...";
         }
 
         /// <summary>

@@ -327,4 +327,22 @@
   <data name="Ignore_MissingTest" xml:space="preserve">
     <value>Ignore : Ignore the missing test code check</value>
   </data>
+  <data name="CoverageNoteHeader" xml:space="preserve">
+    <value>Inputs not found for condition coverage (add rows by hand if needed):</value>
+  </data>
+  <data name="CoverageNoteDecisionTrue" xml:space="preserve">
+    <value>an input where {0} is true</value>
+  </data>
+  <data name="CoverageNoteDecisionFalse" xml:space="preserve">
+    <value>an input where {0} is false</value>
+  </data>
+  <data name="CoverageNoteAtomTrue" xml:space="preserve">
+    <value>an input where {0} is true in {1}</value>
+  </data>
+  <data name="CoverageNoteAtomFalse" xml:space="preserve">
+    <value>an input where {0} is false in {1}</value>
+  </data>
+  <data name="CoverageNoteIndependence" xml:space="preserve">
+    <value>a pair of inputs where only {0} changes and the result of {1} changes</value>
+  </data>
 </root>

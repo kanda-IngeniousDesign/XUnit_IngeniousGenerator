@@ -93,4 +93,37 @@ public class ConditionCoverageGenerationTests
             ],
             passed);
     }
+
+    [Fact]
+    public async Task Generate_BooleanReturnAndImpossibleCondition_CoversBothResultsAndListsWhatIsMissing()
+    {
+        const string source = """
+            namespace Sample;
+            public class Rules
+            {
+                public bool IsLarge(int width, int height)
+                {
+                    return width * height > 10000;
+                }
+
+                public int Mode(int code)
+                {
+                    if (code == 12345 && code % 7 == 3) return 1;
+                    return 0;
+                }
+            }
+            """;
+
+        var result = TargetCompiler.Generate(source, "Sample.Rules");
+        var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
+
+        // bool を返す式も判定として扱い、true と false の両方になる入力を探す
+        Assert.Contains("[InlineData(10000, 1, false)]", result.Code);
+        Assert.Contains("[InlineData(10001, 1, true)]", result.Code);
+
+        // 見つからなかった入力（12345 を 7 で割った余りは 4 で、3 にはならない）は、コメントで書く
+        Assert.Contains("// 条件の網羅で、次の入力は見つかりませんでした（必要なら行を手で追加してください）:", result.Code);
+        Assert.Contains("//   - code == 12345 && code % 7 == 3 が成立する入力", result.Code);
+        Assert.Equal(["IsLarge_BoundaryValues_ReturnsExpected", "Mode_BoundaryValues_ReturnsExpected"], passed);
+    }
 }

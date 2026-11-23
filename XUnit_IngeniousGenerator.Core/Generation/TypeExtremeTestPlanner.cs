@@ -51,7 +51,7 @@ internal static class TypeExtremeTestPlanner
             }
         }
 
-        yield return new ReturnValueTestCase(member, test.TestName, rows);
+        yield return new ReturnValueTestCase(member, test.TestName, rows, uncovered: test.Uncovered);
         foreach (var exception in exceptions) yield return exception;
     }
 

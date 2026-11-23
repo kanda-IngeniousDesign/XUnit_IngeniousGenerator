@@ -140,6 +140,7 @@ internal sealed class ReturnValueTestPlanner
     {
         // 判定の成立・不成立や、複合条件の要素ごとの変化が足りなければ、それを満たす入力を加える
         var candidates = inputs.Rows;
+        IReadOnlyList<string> uncovered = [];
         if (ConditionCoverageSearch.Enabled)
         {
             var constants = declaration.DescendantNodes().OfType<LiteralExpressionSyntax>()
@@ -150,7 +151,7 @@ internal sealed class ReturnValueTestPlanner
                 var tracker = new ConditionTracker();
                 var evaluated = MethodInterpreter.Evaluate(declaration, model, member, input, _context.Instance, tracker);
                 return (evaluated, tracker.Observations);
-            });
+            }, out uncovered);
         }
 
         var rows = new List<(IReadOnlyList<object?>, object?)>(candidates.Count);
@@ -184,7 +185,7 @@ internal sealed class ReturnValueTestPlanner
         }
 
         reason = null;
-        return rows.Count == 0 ? null : new ReturnValueTestCase(member, $"{MemberDisplay.GetTestName(member)}_BoundaryValues_ReturnsExpected", rows, thrown);
+        return rows.Count == 0 ? null : new ReturnValueTestCase(member, $"{MemberDisplay.GetTestName(member)}_BoundaryValues_ReturnsExpected", rows, thrown, uncovered);
     }
 
     /// <summary>

@@ -156,7 +156,7 @@ public sealed class MethodInterpreter
     /// <returns>評価結果</returns>
     private EvaluationResult Run(BaseMethodDeclarationSyntax declaration)
     {
-        if (declaration.ExpressionBody is { } arrow) return EvaluationResult.Returned(EvaluateConverted(arrow.Expression));
+        if (declaration.ExpressionBody is { } arrow) return EvaluationResult.Returned(EvaluateReturned(arrow.Expression));
         if (declaration.Body is null) return EvaluationResult.Unsupported(Messages.Get("UnsupportedNoBody"));
 
         return Execute(declaration.Body) == Flow.Return
@@ -180,7 +180,7 @@ public sealed class MethodInterpreter
                 DeclareLocals(local);
                 return Flow.Normal;
             case ReturnStatementSyntax ret:
-                _returnValue = ret.Expression is null ? null : EvaluateConverted(ret.Expression);
+                _returnValue = ret.Expression is null ? null : EvaluateReturned(ret.Expression);
                 return Flow.Return;
             case IfStatementSyntax ifStatement:
                 return ExecuteIf(ifStatement);
@@ -541,7 +541,7 @@ public sealed class MethodInterpreter
     {
         if (declaration.ExpressionBody is { } arrow)
         {
-            if (!_member.ReturnsVoid) return EvaluateConverted(arrow.Expression);
+            if (!_member.ReturnsVoid) return EvaluateReturned(arrow.Expression);
 
             ExecuteExpressionStatement(arrow.Expression);
             return null;
@@ -1220,6 +1220,52 @@ public sealed class MethodInterpreter
         var constant = member.Type.GetMembers(member.Name).OfType<IFieldSymbol>().First().ConstantValue;
         // 三項演算子の両辺を object にして、int の値が long に揃えられないようにする
         return constant is long l ? (object)l : System.Convert.ToInt32(constant, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// 戻り値の式を評価する。比較・論理演算・is など、bool になる形の式は判定として記録する
+    /// （return a > 5 &amp;&amp; b; の結果が true だけ・false だけに偏らないよう、入力を探すため）
+    /// </summary>
+    /// <param name="expression">戻り値の式</param>
+    /// <returns>値</returns>
+    private object? EvaluateReturned(ExpressionSyntax expression)
+    {
+        var tracker = _budget.Tracker;
+        if (tracker is null || !IsBooleanShape(expression)) return EvaluateConverted(expression);
+
+        tracker.Begin(expression);
+        try
+        {
+            var value = EvaluateConverted(expression);
+            if (value is bool outcome) tracker.End(outcome);
+            else tracker.Abort();
+            return value;
+        }
+        catch
+        {
+            tracker.Abort();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// bool になる形の式（比較・論理演算・否定・is）かを判定する
+    /// </summary>
+    /// <param name="expression">式</param>
+    /// <returns>bool になる形ならtrue</returns>
+    private static bool IsBooleanShape(ExpressionSyntax expression)
+    {
+        return expression switch
+        {
+            ParenthesizedExpressionSyntax parenthesized => IsBooleanShape(parenthesized.Expression),
+            PrefixUnaryExpressionSyntax prefix => prefix.IsKind(SyntaxKind.LogicalNotExpression),
+            IsPatternExpressionSyntax => true,
+            BinaryExpressionSyntax binary => binary.Kind() is SyntaxKind.LogicalAndExpression or SyntaxKind.LogicalOrExpression
+                or SyntaxKind.EqualsExpression or SyntaxKind.NotEqualsExpression
+                or SyntaxKind.LessThanExpression or SyntaxKind.LessThanOrEqualExpression
+                or SyntaxKind.GreaterThanExpression or SyntaxKind.GreaterThanOrEqualExpression,
+            _ => false,
+        };
     }
 
     /// <summary>
