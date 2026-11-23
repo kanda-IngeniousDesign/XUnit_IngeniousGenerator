@@ -192,7 +192,13 @@ internal sealed class TestSyntaxBuilder
 
         var columnTypes = inputTypes.Append(member.ReturnType).ToList();
         var rows = test.Rows.Select(r => r.Inputs.Append(r.Expected).ToList()).ToList();
-        return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_BoundaryValues", columnTypes, rows);
+        var members = WithTheoryData(method, MemberDisplay.GetTestName(member) + "_BoundaryValues", columnTypes, rows);
+        if (test.Uncovered.Count == 0) return members;
+
+        // 条件の網羅で見つからなかった入力は、やっていないことが分かるようにコメントで書く
+        var lines = test.Uncovered.Select(u => "//   - " + u).Prepend("// " + Messages.Get("CoverageNoteHeader"));
+        var comment = lines.SelectMany(l => new[] { Comment(l), CarriageReturnLineFeed }).ToList();
+        return members.Select(m => m is MethodDeclarationSyntax ? m.WithLeadingTrivia(comment) : m);
     }
 
     /// <summary>

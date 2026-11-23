@@ -250,6 +250,66 @@ public class GenerateTestFixTests
         Assert.DoesNotContain(unexpectedPrefix, merged);
     }
 
+    /// <summary>
+    /// ソリューション全体の Fix で、警告が出ているクラスごとのテストファイルがすべて追加されることを確認する
+    /// （標準の BatchFixer では、別プロジェクトへのファイルの追加がまとめられず、何も起きなかった）
+    /// </summary>
+    [Fact]
+    public async Task FixAll_Solution_AddsTestFileForEachClass()
+    {
+        using var workspace = new AdhocWorkspace();
+        var product = AddProductProject(workspace);
+        workspace.AddDocument(DocumentInfo.Create(
+            DocumentId.CreateNewId(product.Id), "Counter.cs", ["Domain"],
+            loader: TextLoader.From(TextAndVersion.Create(SourceText.From("""
+                namespace Product.Domain;
+                public class Counter
+                {
+                    public int Next(int value) => value + 1;
+                }
+                """), VersionStamp.Create())),
+            filePath: Path.Combine("/src", "Product", "Domain", "Counter.cs")));
+        var tests = AddProject(workspace, "Product.Tests", [CorLib, XUnitCore], product.Id);
+
+        var diagnostics = new List<Diagnostic>();
+        foreach (var document in workspace.CurrentSolution.GetProject(product.Id)!.Documents)
+        {
+            var root = (await document.GetSyntaxRootAsync())!;
+            var identifier = root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax>().Single().Identifier;
+            diagnostics.Add(Diagnostic.Create(MissingTest.ClassRule, identifier.GetLocation(), "x"));
+        }
+
+        var first = workspace.CurrentSolution.GetProject(product.Id)!.Documents.First();
+        var context = new FixAllContext(
+            first, new MissingTestFix(), FixAllScope.Solution, "GenerateTest:TEST001:Product.Tests", [MissingTest.DiagnosticId],
+            new FixedDiagnosticProvider(diagnostics), CancellationToken.None);
+        var action = await new MissingTestFix().GetFixAllProvider().GetFixAsync(context);
+
+        var newSolution = await ApplyAsync(action!);
+        Assert.Equal(["CalculatorTests.cs", "CounterTests.cs"], newSolution.GetProject(tests.Id)!.Documents.Select(d => d.Name).Order());
+    }
+
+    /// <summary>
+    /// 決まった警告を返す（全体の Fix のテスト用）
+    /// </summary>
+    private sealed class FixedDiagnosticProvider(IReadOnlyList<Diagnostic> diagnostics) : FixAllContext.DiagnosticProvider
+    {
+        public override Task<IEnumerable<Diagnostic>> GetDocumentDiagnosticsAsync(Document document, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(diagnostics.Where(d => d.Location.SourceTree?.FilePath == document.FilePath));
+        }
+
+        public override Task<IEnumerable<Diagnostic>> GetProjectDiagnosticsAsync(Project project, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(Enumerable.Empty<Diagnostic>());
+        }
+
+        public override Task<IEnumerable<Diagnostic>> GetAllDiagnosticsAsync(Project project, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IEnumerable<Diagnostic>>(diagnostics);
+        }
+    }
+
     private static Task<List<CodeAction>> ComputeFixesAsync(AdhocWorkspace workspace)
     {
         return ComputeFixesAsync(workspace, "Calculator", new MissingTest().SupportedDiagnostics[0]);

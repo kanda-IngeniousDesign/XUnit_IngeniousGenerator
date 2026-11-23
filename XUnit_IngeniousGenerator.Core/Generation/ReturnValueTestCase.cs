@@ -15,14 +15,19 @@ internal sealed class ReturnValueTestCase : PlannedTest
     /// <param name="testName">テストメソッド名</param>
     /// <param name="rows">入力（引数の順）と期待値の組</param>
     /// <param name="thrownInputs">計算で例外になった入力（実行時の例外なら、例外テストにする）</param>
+    /// <param name="uncovered">条件の網羅で、探しても見つからなかった入力の説明</param>
     public ReturnValueTestCase(
         IMethodSymbol member, string testName, IReadOnlyList<(IReadOnlyList<object?> Inputs, object? Expected)> rows,
-        IReadOnlyList<object?[]>? thrownInputs = null)
+        IReadOnlyList<object?[]>? thrownInputs = null, IReadOnlyList<string>? uncovered = null)
         : base(member, testName)
     {
         Rows = rows;
         ThrownInputs = thrownInputs ?? [];
+        Uncovered = uncovered ?? [];
     }
+
+    /// <summary>条件の網羅で、探しても見つからなかった入力の説明（テストにコメントで書く）</summary>
+    public IReadOnlyList<string> Uncovered { get; }
 
     /// <summary>入力（引数の順）と期待値の組</summary>
     public IReadOnlyList<(IReadOnlyList<object?> Inputs, object? Expected)> Rows { get; }

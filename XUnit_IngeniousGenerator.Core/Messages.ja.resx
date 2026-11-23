@@ -327,4 +327,22 @@
   <data name="Ignore_MissingTest" xml:space="preserve">
     <value>Ignore : テストコードの存在チェックを無視する</value>
   </data>
+  <data name="CoverageNoteHeader" xml:space="preserve">
+    <value>条件の網羅で、次の入力は見つかりませんでした（必要なら行を手で追加してください）:</value>
+  </data>
+  <data name="CoverageNoteDecisionTrue" xml:space="preserve">
+    <value>{0} が成立する入力</value>
+  </data>
+  <data name="CoverageNoteDecisionFalse" xml:space="preserve">
+    <value>{0} が成立しない入力</value>
+  </data>
+  <data name="CoverageNoteAtomTrue" xml:space="preserve">
+    <value>{1} の中の {0} が成立する入力</value>
+  </data>
+  <data name="CoverageNoteAtomFalse" xml:space="preserve">
+    <value>{1} の中の {0} が成立しない入力</value>
+  </data>
+  <data name="CoverageNoteIndependence" xml:space="preserve">
+    <value>{1} の中の {0} だけを変えて結果が変わる入力の組</value>
+  </data>
 </root>
