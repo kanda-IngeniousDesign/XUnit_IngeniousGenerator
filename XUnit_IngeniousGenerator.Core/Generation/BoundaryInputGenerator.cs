@@ -46,6 +46,13 @@ internal static class BoundaryInputGenerator
                 .Where(c => SymbolEqualityComparer.Default.Equals(c.Parameter, parameter))
                 .Select(c => c.Condition)
                 .ToList();
+            // out の引数は入力ではないため、既定値だけの列にする（テストでは out _ で受ける）
+            if (parameter.RefKind == RefKind.Out)
+            {
+                builder.AddData(parameter, OutBaseValue(parameter.Type), []);
+                continue;
+            }
+
             boundaries.TryGetValue(parameter, out var constants);
             if (!TryAddParameter(builder, parameter, conditions, constants ?? [], allowMocks, varyCollections, construct)) return null;
         }
@@ -260,6 +267,22 @@ internal static class BoundaryInputGenerator
     {
         return new ObjectValue(
             type, constructor, constructor.Parameters.Select(p => ScalarBaseValue(p.Type)).ToList(), properties.Select(p => (p, ScalarBaseValue(p.Type))).ToList());
+    }
+
+    /// <summary>
+    /// out の引数の列の値（数値は 0、bool は false、それ以外は null。テストでは out _ で受けるため、値は使わない）
+    /// </summary>
+    /// <param name="type">型</param>
+    /// <returns>値</returns>
+    private static object? OutBaseValue(ITypeSymbol type)
+    {
+        return type.SpecialType switch
+        {
+            SpecialType.System_Boolean => false,
+            _ when DataTypes.IsPrimitive(type) && type.SpecialType != SpecialType.System_String && type.SpecialType != SpecialType.System_Char
+                => ToClrValue(TestValue.FromNumber(0), type),
+            _ => null,
+        };
     }
 
     /// <summary>

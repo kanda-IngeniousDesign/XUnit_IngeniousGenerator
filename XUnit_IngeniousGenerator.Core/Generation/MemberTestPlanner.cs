@@ -99,7 +99,6 @@ internal sealed class MemberTestPlanner
     private string? FindBlocker(IMethodSymbol member, BaseMethodDeclarationSyntax declaration)
     {
         if (member.IsGenericMethod) return Messages.Get("GenericMethod");
-        if (member.Parameters.Any(p => p.RefKind != RefKind.None)) return Messages.Get("RefParameters");
         if (declaration.DescendantNodes().OfType<YieldStatementSyntax>().Any()) return Messages.Get("Iterator");
         if (member.IsAsync && member.ReturnsVoid) return Messages.Get("AsyncVoid");
         if (member.MethodKind == MethodKind.Constructor && member.ContainingType.IsAbstract) return Messages.Get("AbstractConstructor");

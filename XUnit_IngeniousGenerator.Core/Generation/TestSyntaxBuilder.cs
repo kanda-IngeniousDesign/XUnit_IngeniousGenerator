@@ -174,7 +174,9 @@ internal sealed class TestSyntaxBuilder
         var nullable = GetNullColumns(test);
         var inputTypes = member.Parameters.Select((p, i) => nullable[i] ? p.Type.WithNullableAnnotation(NullableAnnotation.Annotated) : p.Type).ToList();
         var parameters = member.Parameters
-            .Select((p, i) => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(inputTypes[i])))
+            .Select((p, i) => (p, i))
+            .Where(x => IsInputColumn(x.p))
+            .Select(x => Parameter(Identifier(EscapeIdentifier(x.p.Name))).WithType(_renderer.RenderType(inputTypes[x.i])))
             .Append(Parameter(Identifier(expectedName)).WithType(_renderer.RenderType(member.ReturnType)));
         var arguments = ArgumentList(SeparatedList(member.Parameters.Select((p, i) =>
         {
@@ -190,8 +192,10 @@ internal sealed class TestSyntaxBuilder
             .AddParameterListParameters([.. parameters])
             .WithBody(Block(assertion));
 
-        var columnTypes = inputTypes.Append(member.ReturnType).ToList();
-        var rows = test.Rows.Select(r => r.Inputs.Append(r.Expected).ToList()).ToList();
+        var columnTypes = inputTypes.Where((_, i) => IsInputColumn(member.Parameters[i])).Append(member.ReturnType).ToList();
+        IReadOnlyList<IParameterSymbol> columns = member.Parameters;
+        var rows = InputColumnsOnly(columns, test.Rows.Select(r => (IReadOnlyList<object?>)r.Inputs.Append(r.Expected).ToList()))
+            .Select(r => r.ToList()).ToList();
         var members = WithTheoryData(method, MemberDisplay.GetTestName(member) + "_BoundaryValues", columnTypes, rows);
         if (test.Uncovered.Count == 0) return members;
 
@@ -221,7 +225,7 @@ internal sealed class TestSyntaxBuilder
             // 入力ごとに別のファイルへ記録する
             verify = InvocationExpression(
                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, verify, IdentifierName("UseParameters")),
-                ArgumentList(SeparatedList(inputs.DataParameters.Select(p => Argument(IdentifierName(EscapeIdentifier(p.Name)))))));
+                ArgumentList(SeparatedList(inputs.DataParameters.Where(IsInputColumn).Select(p => Argument(IdentifierName(EscapeIdentifier(p.Name)))))));
         }
 
         // 記録がまだない初回だけ自動で記録し、2回目以降は記録との違いを失敗として検出する。
@@ -250,8 +254,8 @@ internal sealed class TestSyntaxBuilder
         var members = inputs.DataParameters.Count == 0
             ? [method.AddAttributeLists(AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Fact")))))]
             : WithTheoryData(
-                method, MemberDisplay.GetTestName(member) + "_SnapshotInputs", inputs.DataParameters.Select(p => p.Type).ToList(),
-                inputs.Rows.Select(r => (IReadOnlyList<object?>)r).ToList());
+                method, MemberDisplay.GetTestName(member) + "_SnapshotInputs", inputs.DataParameters.Where(IsInputColumn).Select(p => p.Type).ToList(),
+                InputColumnsOnly(inputs.DataParameters, inputs.Rows.Select(r => (IReadOnlyList<object?>)r)));
 
         // なぜ期待値を書けず記録で確かめるのかを、テストの直前にコメントで残す（レビューと、計算できる範囲を広げる手がかりにする）
         var comment = Comment("// " + Messages.Get("SnapshotReason", test.Reason));
@@ -298,8 +302,8 @@ internal sealed class TestSyntaxBuilder
 
         if (inputs.DataParameters.Count == 0) return [method.AddAttributeLists(AttributeList(SingletonSeparatedList(Attribute(IdentifierName("Fact")))))];
 
-        var rows = inputs.Rows.Select(r => (IReadOnlyList<object?>)r).ToList();
-        return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_NoThrowInputs", inputs.DataParameters.Select(p => p.Type).ToList(), rows);
+        var rows = InputColumnsOnly(inputs.DataParameters, inputs.Rows.Select(r => (IReadOnlyList<object?>)r));
+        return WithTheoryData(method, MemberDisplay.GetTestName(member) + "_NoThrowInputs", inputs.DataParameters.Where(IsInputColumn).Select(p => p.Type).ToList(), rows);
     }
 
     /// <summary>
@@ -309,7 +313,7 @@ internal sealed class TestSyntaxBuilder
     /// <returns>テストメソッドの引数</returns>
     private IEnumerable<ParameterSyntax> BuildInputParameters(BoundaryInputs inputs)
     {
-        return inputs.DataParameters.Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)));
+        return inputs.DataParameters.Where(IsInputColumn).Select(p => Parameter(Identifier(EscapeIdentifier(p.Name))).WithType(_renderer.RenderType(p.Type)));
     }
 
     /// <summary>
@@ -409,6 +413,71 @@ internal sealed class TestSyntaxBuilder
     }
 
     /// <summary>
+    /// ref / out の引数を、呼び出しで渡せる形にする。out は out _ で受け、ref はテストの引数ならそのまま ref で、
+    /// 値なら ref new T[] { 値 }[0]（配列の要素は ref で渡せる）にする。in は値をそのまま渡せる
+    /// </summary>
+    /// <param name="member">呼び出すメソッド・コンストラクタ</param>
+    /// <param name="arguments">引数リスト</param>
+    /// <returns>引数リスト</returns>
+    private ArgumentListSyntax WithRefKinds(IMethodSymbol member, ArgumentListSyntax arguments)
+    {
+        if (member.Parameters.All(p => p.RefKind is RefKind.None or RefKind.In)) return arguments;
+
+        return ArgumentList(SeparatedList(arguments.Arguments.Select((argument, i) =>
+        {
+            if (member.Parameters.Length <= i) return argument;
+
+            var parameter = member.Parameters[i];
+            switch (parameter.RefKind)
+            {
+                case RefKind.Out:
+                    return Argument(IdentifierName("_")).WithRefKindKeyword(Token(SyntaxKind.OutKeyword));
+                case RefKind.Ref:
+                    var value = argument.Expression is CastExpressionSyntax cast ? cast.Expression : argument.Expression;
+                    ExpressionSyntax target = value is IdentifierNameSyntax
+                        ? value
+                        : ElementAccessExpression(
+                            ArrayCreationExpression(ArrayType(_renderer.RenderType(parameter.Type), SingletonList(ArrayRankSpecifier(SingletonSeparatedList<ExpressionSyntax>(OmittedArraySizeExpression())))))
+                                .WithInitializer(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SingletonSeparatedList(value))),
+                            BracketedArgumentList(SingletonSeparatedList(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))));
+                    return Argument(target).WithRefKindKeyword(Token(SyntaxKind.RefKeyword));
+                default:
+                    return argument;
+            }
+        })));
+    }
+
+    /// <summary>
+    /// テストの入力の列にする引数か（out の引数は入力ではないため、テストの引数・データに出さない）を判定する
+    /// </summary>
+    /// <param name="parameter">引数</param>
+    /// <returns>入力の列ならtrue</returns>
+    private static bool IsInputColumn(IParameterSymbol parameter)
+    {
+        return parameter.RefKind != RefKind.Out;
+    }
+
+    /// <summary>
+    /// 行から入力の列だけを残し、同じになった行をまとめる
+    /// </summary>
+    /// <param name="parameters">列ごとの引数</param>
+    /// <param name="rows">行</param>
+    /// <returns>行</returns>
+    private static List<IReadOnlyList<object?>> InputColumnsOnly(IReadOnlyList<IParameterSymbol> parameters, IEnumerable<IReadOnlyList<object?>> rows)
+    {
+        if (parameters.All(IsInputColumn)) return rows.ToList();
+
+        var result = new List<IReadOnlyList<object?>>();
+        foreach (var row in rows)
+        {
+            var kept = row.Where((_, i) => parameters.Count <= i || IsInputColumn(parameters[i])).ToList();
+            if (!result.Any(r => r.SequenceEqual(kept))) result.Add(kept);
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// テスト対象の呼び出し（new T(...) / T.M(...) / _sut.M(...) / _sut.P = value）を作る
     /// </summary>
     /// <param name="member">呼び出すメソッド・コンストラクタ</param>
@@ -416,6 +485,7 @@ internal sealed class TestSyntaxBuilder
     /// <returns>呼び出しの式</returns>
     private ExpressionSyntax BuildCall(IMethodSymbol member, ArgumentListSyntax arguments)
     {
+        arguments = WithRefKinds(member, arguments);
         if (member.MethodKind == MethodKind.Constructor)
         {
             return ObjectCreationExpression(_renderer.RenderType(_targetType)).WithArgumentList(arguments);

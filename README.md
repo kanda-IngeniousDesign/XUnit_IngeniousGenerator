@@ -9,13 +9,14 @@ dotnet_diagnostic.TEST001.severity = none
 dotnet_diagnostic.TEST002.severity = none
 ```
 
-Every member with logic in a class ends up in the test project either as tests or as a **skipped test that lists it as not tested**, with the reason (`[Fact(Skip = "Not tested: ...")] public void Load_NotTested() { }`). Warning messages, reasons and Quick Fix titles follow the display language of the IDE or the OS (Japanese, or English otherwise). To fix the language, set `<IngeniousLanguage>ja</IngeniousLanguage>` (or `en`) in a `PropertyGroup` of the project under test. After a test run, Test Explorer (and `dotnet test`) shows the members that are not tested next to the passed and failed tests.
+Every member with logic in a class ends up in the test project either as tests or as a **skipped test that lists it as not tested**, with the reason (`[Fact(Skip = "Not tested: ...")] public void Load_NotTested() { }`). Warning messages, reasons, comments in the generated tests and Quick Fix titles are written in Japanese when the IDE or the OS uses Japanese, and in English otherwise. To fix the language, set `<IngeniousLanguage>ja</IngeniousLanguage>` (or `en`) in a `PropertyGroup` of the project under test. After a test run, Test Explorer (and `dotnet test`) shows the members that are not tested next to the passed and failed tests.
 
 - **TEST001** is reported when the Quick Fix can add something to the test project. If the class has no test file (`XxxTests.cs`), it is reported on the class name, and the Quick Fix creates the test file with the generated tests and the skipped tests (creating the test project if needed and adding it to the solution). If the test file exists, it is reported on each member whose tests can be generated but are missing, and the Quick Fix adds the tests for that member only (replacing its skipped test, if any). "Fix all occurrences" in a document, project or solution works too; create the test project with a single Quick Fix first.
 - **TEST002** is reported on members whose tests cannot be generated and that are not yet in the list, with the reason. The Quick Fix adds the skipped test (`MemberName_NotTested`) to the list, or inserts `// Ignore TEST002`.
 - Members that are not generated automatically but still listed as not tested: members of non-public classes (classes without an access modifier are `internal`; make the class `public` to generate tests), non-public members, property getters with logic, operators, indexers, static constructors and members of nested classes. Private methods are verified through the tests of the public methods that call them.
 - Records and structs are not analyzed. Existing test methods are never changed, except that a skipped test is replaced when real tests are added for the member.
 - Overloads are told apart by parameter types in the test name (`Add_Int_...`, `Add_Decimal_...`).
+- Methods with `ref`, `out` and `in` parameters are tested: `out` arguments are received with `out _`, `ref` arguments are passed from the test parameter (or as `ref new int[] { 0 }[0]`), and `in` arguments are passed as values. Only the return value is checked.
 
 Generated tests:
 
@@ -50,13 +51,14 @@ C#のコードから、xUnitのテストコードをRoslynだけで決定的に�
 
 テスト対象のプロジェクトに `XUnit_IngeniousGenerator` パッケージを追加してください。このパッケージを入れること自体がテスト生成を使う意思表示なので、2つのルールはどちらも**既定で有効**です。止めたい場合は、`.editorconfig` で上記のように重大度を `none` にしてください。無効の間は解析もしません。
 
-クラスの中の処理を持つ関数は、すべてテストプロジェクトに「テスト」か「**テストしていない一覧（スキップのテスト）**」のどちらかとして、理由つきで載ります（`[Fact(Skip = "未テスト: ...")] public void Load_NotTested() { }`）。警告のメッセージ・理由・クイックフィックスのタイトルは、IDE や OS の表示言語に合わせて日本語か英語で書かれます。言語を決めたい場合は、テスト対象のプロジェクトの csproj の `PropertyGroup` に `<IngeniousLanguage>ja</IngeniousLanguage>`（英語なら `en`）を書いてください。テストを実行すると、テストエクスプローラー（と `dotnet test`）に、合格・失敗と並んでテストしていない関数が表示されます。
+クラスの中の処理を持つ関数は、すべてテストプロジェクトに「テスト」か「**テストしていない一覧（スキップのテスト）**」のどちらかとして、理由つきで載ります（`[Fact(Skip = "未テスト: ...")] public void Load_NotTested() { }`）。警告のメッセージ・理由・生成したテストのコメント・クイックフィックスのタイトルは、IDE や OS の表示言語が日本語なら日本語、それ以外なら英語で書かれます。言語を決めたい場合は、テスト対象のプロジェクトの csproj の `PropertyGroup` に `<IngeniousLanguage>ja</IngeniousLanguage>`（英語なら `en`）を書いてください。テストを実行すると、テストエクスプローラー（と `dotnet test`）に、合格・失敗と並んでテストしていない関数が表示されます。
 
 - **TEST001** は、クイックフィックスでテストプロジェクトに追加できるものがあるときに報告します。テストファイル（`XxxTests.cs`）がなければクラス名に報告し、クイックフィックスで、生成したテストとスキップのテストをまとめたテストファイルを作ります（テストプロジェクトがなければ作成し、ソリューションにも追加します）。テストファイルがあれば、テストを生成できるのにまだない関数に報告し、クイックフィックスでその関数のテストだけを追加します（スキップのテストがあれば置き換えます）。ドキュメント・プロジェクト・ソリューション全体の Fix も使えます（テストプロジェクトは、先に1つ個別の Fix で作ってください）。
 - **TEST002** は、テストを生成できず、まだ一覧に載っていない関数に、理由とともに報告します。クイックフィックスで一覧にスキップのテスト（`関数名_NotTested`）を追加するか、`// Ignore TEST002` を挿入します。
 - 自動生成はしないが、テストしていない一覧には載るもの：public でないクラスの関数（アクセス修飾子のないクラスは internal です。テストを生成するには public にしてください）、public でない関数、処理のあるプロパティの get、演算子、インデクサー、静的コンストラクタ、入れ子のクラスの関数。private の関数は、それを呼ぶ public の関数のテストで確かめます。
 - record と構造体は解析の対象外です。既存のテストメソッドは変更しません（本物のテストを追加した関数のスキップのテストだけは置き換えます）。
 - オーバーロードは、テスト名に引数の型を付けて区別します（`Add_Int_...`、`Add_Decimal_...`）。
+- `ref`・`out`・`in` の引数を持つ関数もテストします。`out` は `out _` で受け、`ref` はテストの引数（または `ref new int[] { 0 }[0]`）を渡し、`in` は値をそのまま渡します。確かめるのは戻り値だけです。
 
 生成するテストの入力は、条件の網羅も目指します。境界値だけでは、判定（`if`・三項演算子・ループの条件）がいつも成立またはいつも不成立になる場合や、`&&`・`||` の要素ごとに「その要素だけが変わって結果が変わる」入力の組（MC/DC）がない場合は、すでに使っている値・関数の中の数値の定数とその前後から、足りない入力を探して `Assert.Equal` のテストに加えます。数値の引数ごとに、判定の結果が切り替わる点を二分探索で探すので、ローカル変数を通した比較（`var adjusted = score / 2; if (adjusted >= 40)`）も、引数の本当の境界（79 と 80）で確かめます。`bool` の引数が2つ以上あれば、どの2つの組でも true / false の4通りがそろうように行を加えます。`bool` を返す式（`return a > 5 && b;`）も判定として扱い、結果が true と false の両方になる入力を探します。探しても満たせなかった条件は、テストの上にコメントで書くので、何をテストしていないかが分かります。例外のテストでは、無効な引数を1つだけにします。境界値の入力で起きた実行時の例外（0 での割り算など）も、例外のテストにします。
 

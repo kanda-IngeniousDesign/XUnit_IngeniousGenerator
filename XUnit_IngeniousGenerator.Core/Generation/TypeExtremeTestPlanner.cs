@@ -66,6 +66,8 @@ internal static class TypeExtremeTestPlanner
     {
         for (var i = 0; i < member.Parameters.Length; i++)
         {
+            if (member.Parameters[i].RefKind == RefKind.Out) continue;
+
             foreach (var extreme in TypeExtremes.For(member.Parameters[i], checkOverflow))
             {
                 var row = (object?[])baseRow.Clone();

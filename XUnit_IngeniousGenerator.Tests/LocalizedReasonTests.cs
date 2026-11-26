@@ -58,48 +58,38 @@ public class LocalizedReasonTests
     }
 
     [Fact]
-    public void Resolve_VisualStudioLanguage_WinsOverThreadCulture()
+    public void Detect_VisualStudioJapanese_IsJapanese()
     {
-        // Visual Studio が Fix を計算するスレッドは英語でも、VS が日本語なら VSLANG=1041 で日本語にする
-        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "1041" : null, CultureInfo.GetCultureInfo("en-US"), CultureInfo.GetCultureInfo("en-US"));
-
-        Assert.Equal("ja-JP", culture.Name);
+        // VS の解析用のプロセスのスレッドが英語でも、VS が日本語（VSLANG=1041）なら日本語
+        Assert.True(Core.UiLanguage.Detect("1041", CultureInfo.GetCultureInfo("en-US"), CultureInfo.InvariantCulture));
     }
 
     [Fact]
-    public void Resolve_NoVisualStudioLanguage_UsesThreadCulture()
+    public void Detect_AnyCultureJapanese_IsJapanese()
     {
-        var culture = Core.UiLanguage.Resolve(_ => null, CultureInfo.GetCultureInfo("en-US"), CultureInfo.GetCultureInfo("en-US"));
-
-        Assert.Equal("en-US", culture.Name);
+        // 表示言語が英語・言語なしでも、地域や OS の表示言語が日本語なら日本語
+        Assert.True(Core.UiLanguage.Detect(null, CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("ja-JP"), CultureInfo.GetCultureInfo("en-US")));
     }
 
     [Fact]
-    public void Resolve_EnglishThreadOnJapaneseOs_UsesOsLanguage()
+    public void Detect_NothingJapanese_IsEnglish()
     {
-        // VS の別のプロセスのスレッドが英語でも、日本語の Windows なら日本語にする
-        var culture = Core.UiLanguage.Resolve(_ => null, CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("ja-JP"));
-
-        Assert.Equal("ja-JP", culture.Name);
+        Assert.False(Core.UiLanguage.Detect("1033", CultureInfo.GetCultureInfo("en-US"), CultureInfo.InvariantCulture, CultureInfo.GetCultureInfo("fr-FR")));
+        Assert.False(Core.UiLanguage.Detect("abc", CultureInfo.GetCultureInfo("en-US")));
     }
 
     [Fact]
-    public void Use_Setting_WinsOverEverything()
+    public void Use_Setting_WinsOverDetection()
     {
+        // テストのプロセスは日本語（TestCulture）だが、csproj で en を指定すれば英語
         using (Core.UiLanguage.Use("en"))
         {
-            Assert.Equal("en", Core.UiLanguage.Current().Name);
+            Assert.False(Core.UiLanguage.IsJapanese());
+            Assert.Equal("Fix : Generate test code in P", Core.Messages.Get("Fix_GenerateTests", "P"));
         }
 
-        Assert.Equal("ja-JP", Core.UiLanguage.Current().Name);
-    }
-
-    [Fact]
-    public void Resolve_InvalidVisualStudioLanguage_UsesThreadCulture()
-    {
-        var culture = Core.UiLanguage.Resolve(name => name == "VSLANG" ? "abc" : null, CultureInfo.GetCultureInfo("ja-JP"), CultureInfo.GetCultureInfo("en-US"));
-
-        Assert.Equal("ja-JP", culture.Name);
+        Assert.True(Core.UiLanguage.IsJapanese());
+        Assert.Equal("Fix : テストコードを生成する（P）", Core.Messages.Get("Fix_GenerateTests", "P"));
     }
 
     private static Core.GenerationResult GenerateWith(string culture)
