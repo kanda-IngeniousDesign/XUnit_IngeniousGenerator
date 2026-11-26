@@ -110,7 +110,7 @@ internal sealed class ReturnValueTestPlanner
     private static string? GetStaticReason(IMethodSymbol member, BoundaryInputs inputs)
     {
         var structured = inputs.DataParameters.FirstOrDefault(
-            p => !IsSupportedType(p.Type) && !ObjectTypes.TryGetShape(p.Type, out _, out _) && !DataTypes.TryGetCollectionElement(p.Type, out _));
+            p => p.RefKind != RefKind.Out && !IsSupportedType(p.Type) && !ObjectTypes.TryGetShape(p.Type, out _, out _) && !DataTypes.TryGetCollectionElement(p.Type, out _));
         if (structured is not null)
         {
             return Messages.Get("ParameterTypeNotComputable", structured.Name, structured.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
@@ -146,7 +146,9 @@ internal sealed class ReturnValueTestPlanner
             var constants = declaration.DescendantNodes().OfType<LiteralExpressionSyntax>()
                 .Select(l => model.GetConstantValue(l)).Where(c => c.HasValue && c.Value is int or long)
                 .Select(c => System.Convert.ToInt64(c.Value, System.Globalization.CultureInfo.InvariantCulture)).Distinct().ToList();
-            candidates = ConditionCoverageSearch.Improve(candidates, constants, input =>
+            var fixedColumns = member.Parameters.Select((p, i) => (p, i)).Where(x => x.p.RefKind == RefKind.Out).Select(x => x.i);
+            var fixedColumnSet = new HashSet<int>(fixedColumns);
+            candidates = ConditionCoverageSearch.Improve(candidates, constants, fixedColumnSet, input =>
             {
                 var tracker = new ConditionTracker();
                 var evaluated = MethodInterpreter.Evaluate(declaration, model, member, input, _context.Instance, tracker);

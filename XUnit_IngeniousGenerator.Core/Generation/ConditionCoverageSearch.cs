@@ -40,12 +40,13 @@ internal static class ConditionCoverageSearch
     /// </summary>
     /// <param name="rows">入力</param>
     /// <param name="constants">関数の中の数値の定数（数値の引数の候補に加える）</param>
+    /// <param name="fixedColumns">値を変えない列（out の引数）</param>
     /// <param name="run">入力を評価し、結果と判定の記録を返す処理</param>
     /// <param name="uncovered">探しても見つからなかった入力の説明（テストにコメントで書く）</param>
     /// <returns>入力</returns>
     public static IReadOnlyList<object?[]> Improve(
-        IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run,
-        out IReadOnlyList<string> uncovered)
+        IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, ISet<int> fixedColumns,
+        Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, out IReadOnlyList<string> uncovered)
     {
         uncovered = [];
         if (rows.Count == 0) return rows;
@@ -55,13 +56,13 @@ internal static class ConditionCoverageSearch
 
         // 判定が切り替わる境界（ローカル変数を通した比較なども）と、bool の引数の組み合わせは、目標を満たしていても加える
         var kept = rows.ToList();
-        AddBoundaryRows(kept, constants, run, coverage);
-        AddBooleanPairs(kept, run, coverage);
+        AddBoundaryRows(kept, constants, fixedColumns, run, coverage);
+        AddBooleanPairs(kept, fixedColumns, run, coverage);
         if (coverage.Missing() == 0) return kept;
 
         var tried = new List<object?[]>(kept);
         var evaluations = 0;
-        foreach (var candidate in Candidates(kept, constants))
+        foreach (var candidate in Candidates(kept, constants, fixedColumns))
         {
             if (MaxRows <= kept.Count || MaxEvaluations <= evaluations || coverage.Missing() == 0) break;
             if (tried.Any(r => r.SequenceEqual(candidate))) continue;
@@ -90,14 +91,14 @@ internal static class ConditionCoverageSearch
     /// <param name="run">入力を評価し、結果と判定の記録を返す処理</param>
     /// <param name="coverage">満たした目標の記録</param>
     private static void AddBoundaryRows(
-        List<object?[]> kept, IReadOnlyCollection<long> constants, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, Coverage coverage)
+        List<object?[]> kept, IReadOnlyCollection<long> constants, ISet<int> fixedColumns, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, Coverage coverage)
     {
         var baseRow = kept[0];
         var evaluations = 0;
         for (var column = 0; column < baseRow.Length; column++)
         {
             var sample = baseRow[column];
-            if (sample is not (int or long or decimal)) continue;
+            if (fixedColumns.Contains(column) || sample is not (int or long or decimal)) continue;
 
             var cache = new Dictionary<decimal, (string Signature, List<ConditionObservation> Observations)>();
             (string Signature, List<ConditionObservation> Observations) At(decimal value)
@@ -218,10 +219,10 @@ internal static class ConditionCoverageSearch
     /// <param name="run">入力を評価し、結果と判定の記録を返す処理</param>
     /// <param name="coverage">満たした目標の記録</param>
     private static void AddBooleanPairs(
-        List<object?[]> kept, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, Coverage coverage)
+        List<object?[]> kept, ISet<int> fixedColumns, Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, Coverage coverage)
     {
         var baseRow = kept[0];
-        var columns = Enumerable.Range(0, baseRow.Length).Where(i => baseRow[i] is bool).ToList();
+        var columns = Enumerable.Range(0, baseRow.Length).Where(i => baseRow[i] is bool && !fixedColumns.Contains(i)).ToList();
         if (columns.Count < 2) return;
 
         var pairs = columns.SelectMany((c, k) => columns.Skip(k + 1).Select(d => (I: c, J: d))).ToList();
@@ -270,10 +271,10 @@ internal static class ConditionCoverageSearch
     /// <param name="rows">入力</param>
     /// <param name="constants">関数の中の数値の定数</param>
     /// <returns>候補</returns>
-    private static IEnumerable<object?[]> Candidates(IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants)
+    private static IEnumerable<object?[]> Candidates(IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, ISet<int> fixedColumns)
     {
         var columns = rows[0].Length;
-        var values = Enumerable.Range(0, columns).Select(i => ValuesOf(rows, i, constants)).ToList();
+        var values = Enumerable.Range(0, columns).Select(i => fixedColumns.Contains(i) ? [rows[0][i]] : ValuesOf(rows, i, constants)).ToList();
         var baseRow = rows[0];
 
         for (var i = 0; i < columns; i++)
