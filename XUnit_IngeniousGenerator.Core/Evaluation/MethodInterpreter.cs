@@ -1046,7 +1046,39 @@ public sealed class MethodInterpreter
             }
         }
 
-        return KnownMethods.Invoke(invocation, _model, EvaluateConverted);
+        var tracker = _budget.Tracker;
+        if (tracker is null) return KnownMethods.Invoke(invocation, _model, EvaluateConverted);
+
+        // Math.Clamp・Min・Max の中の比較も判定として記録する（上限・下限で切り替わる境界を探すため）
+        var values = new Dictionary<ExpressionSyntax, object?>();
+        var result = KnownMethods.Invoke(invocation, _model, e => values[e] = EvaluateConverted(e));
+        RecordMathComparisons(invocation, values, tracker);
+        return result;
+    }
+
+    /// <summary>
+    /// Math.Clamp（下限より小さいか・上限より大きいか）・Min・Max（どちらが小さいか）の比較を、判定として記録する
+    /// </summary>
+    /// <param name="invocation">呼び出し</param>
+    /// <param name="values">評価した引数の値</param>
+    /// <param name="tracker">判定の記録</param>
+    private void RecordMathComparisons(InvocationExpressionSyntax invocation, Dictionary<ExpressionSyntax, object?> values, ConditionTracker tracker)
+    {
+        if (_model.GetSymbolInfo(invocation).Symbol is not IMethodSymbol { ContainingType: { } type } method || type.ToDisplayString() != "System.Math") return;
+
+        var arguments = invocation.ArgumentList.Arguments.Select(a => a.Expression).ToList();
+        if (!arguments.All(values.ContainsKey) || arguments.Any(a => values[a] is null || !ClrOperations.IsNumber(values[a]))) return;
+
+        switch (method.Name)
+        {
+            case "Clamp" when arguments.Count == 3:
+                tracker.Observe(arguments[1], ClrOperations.CompareNumbers(values[arguments[0]]!, values[arguments[1]]!) < 0);
+                tracker.Observe(arguments[2], 0 < ClrOperations.CompareNumbers(values[arguments[0]]!, values[arguments[2]]!));
+                break;
+            case "Min" or "Max" when arguments.Count == 2:
+                tracker.Observe(invocation, ClrOperations.CompareNumbers(values[arguments[0]]!, values[arguments[1]]!) < 0);
+                break;
+        }
     }
 
     /// <summary>

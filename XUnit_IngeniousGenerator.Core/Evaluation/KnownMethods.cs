@@ -60,6 +60,7 @@ internal static class KnownMethods
             ("System.Math", "Abs", 1) => Abs(arguments[0]),
             ("System.Math", "Max", 2) => ClrOperations.CompareNumbers(arguments[0]!, arguments[1]!) < 0 ? arguments[1] : arguments[0],
             ("System.Math", "Min", 2) => ClrOperations.CompareNumbers(arguments[1]!, arguments[0]!) < 0 ? arguments[1] : arguments[0],
+            ("System.Math", "Clamp", 3) => Clamp(arguments[0]!, arguments[1]!, arguments[2]!),
             ("System.Math", "Floor", 1) => Rounding(arguments[0], Math.Floor, Math.Floor),
             ("System.Math", "Ceiling", 1) => Rounding(arguments[0], Math.Ceiling, Math.Ceiling),
             ("System.Math", "Round", 1) => Rounding(arguments[0], Math.Round, Math.Round),
@@ -117,6 +118,20 @@ internal static class KnownMethods
             decimal m => forDecimal(m),
             _ => throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMathRounding")),
         };
+    }
+
+    /// <summary>
+    /// Math.Clamp を評価する（min が max より大きい場合、実行時は ArgumentException になるが、ここでは計算の対象外にする）
+    /// </summary>
+    /// <param name="value">値</param>
+    /// <param name="min">下限</param>
+    /// <param name="max">上限</param>
+    /// <returns>下限と上限の間に収めた値</returns>
+    private static object Clamp(object value, object min, object max)
+    {
+        if (0 < ClrOperations.CompareNumbers(min, max)) throw new UnsupportedSyntaxException(Messages.Get("UnsupportedMathClamp"));
+        if (ClrOperations.CompareNumbers(value, min) < 0) return min;
+        return 0 < ClrOperations.CompareNumbers(value, max) ? max : value;
     }
 
     /// <summary>

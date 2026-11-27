@@ -41,11 +41,12 @@ internal static class ConditionCoverageSearch
     /// <param name="rows">入力</param>
     /// <param name="constants">関数の中の数値の定数（数値の引数の候補に加える）</param>
     /// <param name="fixedColumns">値を変えない列（out の引数）</param>
+    /// <param name="texts">関数の中の文字列の定数（文字列の引数の候補に加える）</param>
     /// <param name="run">入力を評価し、結果と判定の記録を返す処理</param>
     /// <param name="uncovered">探しても見つからなかった入力の説明（テストにコメントで書く）</param>
     /// <returns>入力</returns>
     public static IReadOnlyList<object?[]> Improve(
-        IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, ISet<int> fixedColumns,
+        IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, ISet<int> fixedColumns, IReadOnlyCollection<string> texts,
         Func<object?[], (EvaluationResult Result, List<ConditionObservation> Observations)> run, out IReadOnlyList<string> uncovered)
     {
         uncovered = [];
@@ -62,7 +63,7 @@ internal static class ConditionCoverageSearch
 
         var tried = new List<object?[]>(kept);
         var evaluations = 0;
-        foreach (var candidate in Candidates(kept, constants, fixedColumns))
+        foreach (var candidate in Candidates(kept, constants, fixedColumns, texts))
         {
             if (MaxRows <= kept.Count || MaxEvaluations <= evaluations || coverage.Missing() == 0) break;
             if (tried.Any(r => r.SequenceEqual(candidate))) continue;
@@ -270,11 +271,14 @@ internal static class ConditionCoverageSearch
     /// </summary>
     /// <param name="rows">入力</param>
     /// <param name="constants">関数の中の数値の定数</param>
+    /// <param name="fixedColumns">値を変えない列</param>
+    /// <param name="texts">関数の中の文字列の定数</param>
     /// <returns>候補</returns>
-    private static IEnumerable<object?[]> Candidates(IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, ISet<int> fixedColumns)
+    private static IEnumerable<object?[]> Candidates(
+        IReadOnlyList<object?[]> rows, IReadOnlyCollection<long> constants, ISet<int> fixedColumns, IReadOnlyCollection<string> texts)
     {
         var columns = rows[0].Length;
-        var values = Enumerable.Range(0, columns).Select(i => fixedColumns.Contains(i) ? [rows[0][i]] : ValuesOf(rows, i, constants)).ToList();
+        var values = Enumerable.Range(0, columns).Select(i => fixedColumns.Contains(i) ? [rows[0][i]] : ValuesOf(rows, i, constants, texts)).ToList();
         var baseRow = rows[0];
 
         for (var i = 0; i < columns; i++)
@@ -309,8 +313,9 @@ internal static class ConditionCoverageSearch
     /// <param name="rows">入力</param>
     /// <param name="column">列</param>
     /// <param name="constants">関数の中の数値の定数</param>
+    /// <param name="texts">関数の中の文字列の定数</param>
     /// <returns>値</returns>
-    private static List<object?> ValuesOf(IReadOnlyList<object?[]> rows, int column, IReadOnlyCollection<long> constants)
+    private static List<object?> ValuesOf(IReadOnlyList<object?[]> rows, int column, IReadOnlyCollection<long> constants, IReadOnlyCollection<string> texts)
     {
         var values = rows.Select(r => r[column]).Distinct().ToList();
         values.AddRange(values.FirstOrDefault(v => v is not null) switch
@@ -318,6 +323,12 @@ internal static class ConditionCoverageSearch
             int => constants.Where(c => int.MinValue <= c && c <= int.MaxValue).Select(c => (object?)(int)c),
             long => constants.Select(c => (object?)c),
             decimal => constants.Select(c => (object?)(decimal)c),
+
+            // 文字列は、関数の中の文字列（name.Contains("キティ") の "キティ"）と、その前後に文字を足したもの、null・空・空白
+            string => texts.SelectMany(t => new object?[] { t, "a" + t, t + "a" }).Concat([null, string.Empty, " "]),
+
+            // 日付は、今の日付の「日」と曜日のすべての組み合わせ（13日の金曜日など）になる日付
+            DateTime => DateCombinations(values.OfType<DateTime>().ToList()).Cast<object?>(),
             _ => [],
         });
         values = values.Distinct().ToList();
@@ -329,6 +340,32 @@ internal static class ConditionCoverageSearch
             _ => [],
         });
         return values.Concat(neighbors).Distinct().ToList();
+    }
+
+    /// <summary>
+    /// 今の日付に出てくる「日」と、7つの曜日の組み合わせになる日付を、最初の日付から先へ探して返す（13日の金曜日など）
+    /// </summary>
+    /// <param name="dates">今の日付</param>
+    /// <returns>日付</returns>
+    private static IEnumerable<DateTime> DateCombinations(List<DateTime> dates)
+    {
+        if (dates.Count == 0) return [];
+
+        var start = dates.Min();
+        if (DateTime.MaxValue.AddYears(-30) < start) return [];
+
+        var result = new List<DateTime>();
+        foreach (var day in dates.Select(d => d.Day).Distinct().Where(d => d <= 28))
+        {
+            var found = new HashSet<DayOfWeek>();
+            for (var month = new DateTime(start.Year, start.Month, 1); found.Count < 7 && month.Year < start.Year + 30; month = month.AddMonths(1))
+            {
+                var date = new DateTime(month.Year, month.Month, day, start.Hour, start.Minute, start.Second, start.Kind);
+                if (start <= date && found.Add(date.DayOfWeek)) result.Add(date);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -352,6 +389,7 @@ internal static class ConditionCoverageSearch
         // 判定ごとの、要素の値と結果の組（同じ組は1つにまとめる）
         private readonly Dictionary<SyntaxNode, HashSet<string>> _signatures = [];
         private readonly Dictionary<SyntaxNode, int> _atomCounts = [];
+        private readonly HashSet<SyntaxNode> _implicit = [];
         private readonly Dictionary<SyntaxNode, IReadOnlyList<Microsoft.CodeAnalysis.CSharp.Syntax.ExpressionSyntax>> _atoms = [];
 
         /// <summary>
@@ -366,6 +404,7 @@ internal static class ConditionCoverageSearch
                 set.Add(Signature(observation));
                 _atomCounts[observation.Decision] = observation.Atoms.Count;
                 _atoms[observation.Decision] = observation.Atoms;
+                if (observation.IsImplicit) _implicit.Add(observation.Decision);
             }
         }
 
@@ -376,7 +415,7 @@ internal static class ConditionCoverageSearch
         public IReadOnlyList<string> DescribeMissing()
         {
             var result = new List<string>();
-            foreach (var pair in _signatures.OrderBy(p => p.Key.SpanStart))
+            foreach (var pair in _signatures.Where(p => !_implicit.Contains(p.Key)).OrderBy(p => p.Key.SpanStart))
             {
                 var decision = Shorten(pair.Key);
                 var observed = pair.Value.Select(Parse).ToList();

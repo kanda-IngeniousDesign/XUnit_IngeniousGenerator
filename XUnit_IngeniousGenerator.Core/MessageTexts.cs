@@ -72,6 +72,7 @@ internal static class MessageTexts
         ["UnsupportedLongString"] = ("string too long (width {0})", "長すぎる文字列（幅 {0}）"),
         ["UnsupportedLoop"] = ("loop", "ループ"),
         ["UnsupportedMathAbs"] = ("argument type of Math.Abs", "Math.Abs の引数の型"),
+        ["UnsupportedMathClamp"] = ("Math.Clamp with min greater than max", "下限が上限より大きい Math.Clamp"),
         ["UnsupportedMathRounding"] = ("argument type of Math rounding", "Math の丸めの引数の型"),
         ["UnsupportedMember"] = ("reference to member '{0}'", "メンバー '{0}' の参照"),
         ["UnsupportedMethodCall"] = ("method call '{0}'", "メソッド呼び出し '{0}'"),
