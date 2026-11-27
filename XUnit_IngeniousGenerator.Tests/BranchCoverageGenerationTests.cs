@@ -122,4 +122,28 @@ public class BranchCoverageGenerationTests
         Assert.Equal(result.GeneratedTestCount, passed.Count);
         return result;
     }
+
+    [Fact]
+    public async Task Generate_MathClamp_ComputesExpectedValues()
+    {
+        const string source = """
+            namespace Sample;
+            public class Fortune
+            {
+                public int Score(int age)
+                {
+                    var score = age * 2;
+                    return System.Math.Clamp(score, 0, 100);
+                }
+            }
+            """;
+
+        var result = await GenerateAndRunAsync(source, "Sample.Fortune");
+
+        // Math.Clamp を計算し、上限・下限で切り替わる境界（50 と 51）も入力にする
+        Assert.Contains("[InlineData(50, 100)]", result.Code);
+        Assert.Contains("[InlineData(51, 100)]", result.Code);
+        Assert.Contains("[InlineData(-1, 0)]", result.Code);
+        Assert.DoesNotContain("MatchesSnapshot", result.Code);
+    }
 }

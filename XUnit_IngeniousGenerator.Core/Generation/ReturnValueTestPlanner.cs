@@ -146,9 +146,12 @@ internal sealed class ReturnValueTestPlanner
             var constants = declaration.DescendantNodes().OfType<LiteralExpressionSyntax>()
                 .Select(l => model.GetConstantValue(l)).Where(c => c.HasValue && c.Value is int or long)
                 .Select(c => System.Convert.ToInt64(c.Value, System.Globalization.CultureInfo.InvariantCulture)).Distinct().ToList();
+            var texts = declaration.DescendantNodes().OfType<LiteralExpressionSyntax>()
+                .Select(l => model.GetConstantValue(l)).Where(c => c.HasValue && c.Value is string { Length: > 0 })
+                .Select(c => (string)c.Value!).Distinct().Take(10).ToList();
             var fixedColumns = member.Parameters.Select((p, i) => (p, i)).Where(x => x.p.RefKind == RefKind.Out).Select(x => x.i);
             var fixedColumnSet = new HashSet<int>(fixedColumns);
-            candidates = ConditionCoverageSearch.Improve(candidates, constants, fixedColumnSet, input =>
+            candidates = ConditionCoverageSearch.Improve(candidates, constants, fixedColumnSet, texts, input =>
             {
                 var tracker = new ConditionTracker();
                 var evaluated = MethodInterpreter.Evaluate(declaration, model, member, input, _context.Instance, tracker);

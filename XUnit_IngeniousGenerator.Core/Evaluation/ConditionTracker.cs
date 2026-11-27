@@ -50,6 +50,17 @@ public sealed class ConditionTracker
     }
 
     /// <summary>
+    /// 式の中に隠れた比較（Math.Clamp の上限・下限など）の結果を、判定として記録する
+    /// （網羅できなかった説明には出さない。式の文字列だけでは何の比較か分からないため）
+    /// </summary>
+    /// <param name="node">比較を表す式</param>
+    /// <param name="outcome">比較の結果</param>
+    public void Observe(ExpressionSyntax node, bool outcome)
+    {
+        Observations.Add(new ConditionObservation(node, [node]) { Outcome = outcome, IsImplicit = true });
+    }
+
+    /// <summary>
     /// 判定の評価が途中で終わった（例外など）ので、記録しない
     /// </summary>
     public void Abort()
@@ -103,6 +114,9 @@ public sealed class ConditionObservation
 
     /// <summary>判定の結果</summary>
     public bool Outcome { get; set; }
+
+    /// <summary>式の中に隠れた比較か（Math.Clamp の上限・下限など。網羅できなかった説明には出さない）</summary>
+    public bool IsImplicit { get; set; }
 
     /// <summary>
     /// 要素の位置を返す

@@ -126,4 +126,52 @@ public class ConditionCoverageGenerationTests
         Assert.Contains("//   - code == 12345 && code % 7 == 3 が成立する入力", result.Code);
         Assert.Equal(["IsLarge_BoundaryValues_ReturnsExpected", "Mode_BoundaryValues_ReturnsExpected"], passed);
     }
+
+    [Fact]
+    public async Task Generate_StringLiteralDateCombinationAndClamp_CoversEveryCondition()
+    {
+        const string source = """
+            using System;
+            public enum Rank { 大吉, 中吉, 小吉, 吉, 凶 }
+
+            public class FortuneTeller
+            {
+                public int CalcScore(string name, int age, DateTime date)
+                {
+                    if (string.IsNullOrWhiteSpace(name))
+                        throw new ArgumentException("名前が空です", nameof(name));
+                    if (age < 0 || age > 150)
+                        throw new ArgumentOutOfRangeException(nameof(age));
+
+                    var score = name.Length * 7;
+
+                    if (name.Contains("キティ"))
+                        score += 30;
+
+                    if (age >= 60)
+                        score += 10;
+                    else if (age >= 20)
+                        score += 5;
+                    else if (age < 6)
+                        score += 20;
+
+                    if (date.DayOfWeek == DayOfWeek.Friday && date.Day == 13)
+                        score -= 40;
+                    else if (date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+                        score += 8;
+
+                    return Math.Clamp(score, 0, 100);
+                }
+            }
+            """;
+        var result = TargetCompiler.Generate(source, "FortuneTeller");
+        var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
+
+        // Math.Clamp を計算して Assert.Equal にし、関数の中の文字列（"キティ"）と、13日の金曜日の日付も入力にする
+        Assert.Contains("{ \"キティ\", 1, new DateTime(2026, 1, 1), 71 }", result.Code);
+        Assert.Contains("{ \"a\", 1, new DateTime(2026, 2, 13), 0 }", result.Code);
+        Assert.DoesNotContain("MatchesSnapshot", result.Code);
+        Assert.DoesNotContain("// 条件の網羅で", result.Code);
+        Assert.Contains("CalcScore_BoundaryValues_ReturnsExpected", passed);
+    }
 }
