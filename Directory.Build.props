@@ -12,7 +12,7 @@
       Core.dll のバージョンが変わらないと、VS は以前に読み込んだ古い Core.dll を使い続け、新しいアナライザーと食い違う
       （0.1.5 までは Core.dll が常に 1.0.0.0 で、言語の修正が効かず、例外も出ていた）
     -->
-    <IngeniousGeneratorVersion>0.1.11</IngeniousGeneratorVersion>
+    <IngeniousGeneratorVersion>0.1.12</IngeniousGeneratorVersion>
   </PropertyGroup>
 
 </Project>
