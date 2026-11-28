@@ -170,6 +170,10 @@ public class ConditionCoverageGenerationTests
         // Math.Clamp を計算して Assert.Equal にし、関数の中の文字列（"キティ"）と、13日の金曜日の日付も入力にする
         Assert.Contains("{ \"キティ\", 1, new DateTime(2026, 1, 1), 71 }", result.Code);
         Assert.Contains("{ \"a\", 1, new DateTime(2026, 2, 13), 0 }", result.Code);
+
+        // 区間の中ほどの値（年齢 0〜5 の 3、20〜59 の 40 など）は行にしない
+        Assert.DoesNotContain("{ \"a\", 3,", result.Code);
+        Assert.DoesNotContain("{ \"a\", 40,", result.Code);
         Assert.DoesNotContain("MatchesSnapshot", result.Code);
         Assert.DoesNotContain("// 条件の網羅で", result.Code);
         Assert.Contains("CalcScore_BoundaryValues_ReturnsExpected", passed);
