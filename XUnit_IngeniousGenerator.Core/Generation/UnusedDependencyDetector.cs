@@ -51,7 +51,7 @@ internal static class UnusedDependencyDetector
     /// </summary>
     /// <param name="type">引数の型</param>
     /// <returns>依存の型ならtrue</returns>
-    private static bool IsDependencyType(ITypeSymbol type)
+    internal static bool IsDependencyType(ITypeSymbol type)
     {
         return type is INamedTypeSymbol { TypeKind: TypeKind.Interface or TypeKind.Class } named
             && named.SpecialType == SpecialType.None

@@ -21,6 +21,7 @@ internal static class MessageTexts
         ["KindNoThrow"] = ("No-exception check", "例外が出ないことの確認"),
         ["KindReturnValue"] = ("Return value test", "戻り値テスト"),
         ["MoqHint"] = (". Add Moq to the test project to mock interface dependencies automatically", "。テストプロジェクトに Moq を追加すると、インターフェースの依存を自動でモックします"),
+        ["NullDependencyUsed"] = ("'{0}' is null because the dependency could not be created, so calling this member would throw NullReferenceException{1}", "依存 '{0}' を作れず null のため、呼び出すと NullReferenceException になります{1}"),
         ["NoTestToGenerate"] = ("There is no test to generate (no leading guards and no return value)", "自動生成できるテストがありません（先頭のガードも戻り値もないため）"),
         ["NoValidValue"] = ("No valid value for parameter {0} can be chosen, so the {2} test for {1} is skipped", "引数 {0} の有効な値を決められないため、{1} の{2}のテストは対象外です"),
         ["NonDeterministicMember"] = ("'{0}' returns a different result every run", "'{0}' は実行するたびに結果が変わるため"),

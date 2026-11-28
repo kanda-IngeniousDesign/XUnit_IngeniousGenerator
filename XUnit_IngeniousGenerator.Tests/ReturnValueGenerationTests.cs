@@ -203,6 +203,36 @@ public class ReturnValueGenerationTests
         Assert.EndsWith("テストプロジェクトに Verify.Xunit を追加すると、実行結果を記録するテストを生成します", item);
     }
 
+    [Fact]
+    public async Task Generate_UsesDependencyPassedAsNull_DoesNotGenerateTestsThatThrow()
+    {
+        // Moq がないとインターフェースの依存は null になるため、それを使う関数（呼んだ先で使う場合も）のテストは作らず、理由を書く
+        const string source = """
+            using System;
+            namespace Sample;
+            public interface IClock { DateTime Now { get; } }
+            public interface IStore { void Add(string name); }
+            public class Booking
+            {
+                private readonly IClock _clock;
+                private readonly IStore _store;
+                public Booking(IClock clock, IStore store) { _clock = clock; _store = store; }
+                public bool IsOpen(int hour) => hour < _clock.Now.Hour;
+                public void Book(string name, int hour) { if (IsOpen(hour)) _store.Add(name); }
+                public int Double(int value) => value * 2;
+            }
+            """;
+
+        var result = TargetCompiler.Generate(source, "Sample.Booking");
+        var passed = await TargetCompiler.RunGeneratedTestsAsync(source, result.Code);
+
+        Assert.DoesNotContain("IsOpen_BoundaryValues", result.Code);
+        Assert.DoesNotContain("Book_BoundaryValues", result.Code);
+        Assert.Contains("Double_BoundaryValues_ReturnsExpected", passed);
+        Assert.Contains(result.ManualItems, i => i.StartsWith("IsOpen(int): 戻り値テスト: 依存 '_clock' を作れず null のため", StringComparison.Ordinal));
+        Assert.Contains(result.ManualItems, i => i.StartsWith("Book(string, int): 例外が出ないことの確認: 依存 '", StringComparison.Ordinal));
+    }
+
     private static async Task<Core.GenerationResult> GenerateAndRunAsync(string source, string metadataName)
     {
         var result = TargetCompiler.Generate(source, metadataName);
