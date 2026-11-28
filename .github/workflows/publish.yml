@@ -1,0 +1,49 @@
+# nuget.org への公開（Trusted Publishing）
+# GitHub の Actions 画面で「Run workflow」を押すと、main をテストしてから、選んだパッケージを公開する。
+# API キーは持たず、実行のたびに nuget.org から短い期限のキーを受け取る（nuget.org の Trusted Publishing のポリシーと対で動く）
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 公開するパッケージ
+        type: choice
+        options:
+          - XUnit_IngeniousGenerator
+          - Roslyn_IngeniousCommon
+        default: XUnit_IngeniousGenerator
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    # main 以外のブランチからは公開しない
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE: ${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test XUnit_IngeniousGenerator.Tests/XUnit_IngeniousGenerator.Tests.csproj --configuration Release
+
+      - name: Pack
+        run: dotnet pack "$PACKAGE/$PACKAGE.csproj" --configuration Release --output out
+
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      # 同じバージョンがすでに公開済みなら失敗する（バージョンの上げ忘れに気づくため、--skip-duplicate は付けない）
+      - name: Push
+        run: dotnet nuget push "out/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
