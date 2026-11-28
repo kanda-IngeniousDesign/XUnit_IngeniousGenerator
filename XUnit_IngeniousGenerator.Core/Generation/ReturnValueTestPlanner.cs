@@ -59,6 +59,13 @@ internal sealed class ReturnValueTestPlanner
 
         // 戻り値がない、または時刻・乱数で戻り値が変わるメソッドは、境界値の入力で例外が出ないことだけを確かめる
         var checksOnlyNoThrow = member.ReturnsVoid || IsTaskWithoutResult(member.ReturnType) || dependency is not null;
+
+        // 作れずに null を渡した依存を使う関数は、テストを実行すると NullReferenceException になるため作らない
+        if (NullDependencyDetector.FindUsed(declaration, model, _context.Instance, _context.Compilation) is { } nullDependency)
+        {
+            var hint = _context.Options.UseMoq ? string.Empty : Messages.Get("MoqHint");
+            return Manual(display, Messages.Get("NullDependencyUsed", nullDependency.Name, hint), checksOnlyNoThrow);
+        }
         var inputs = BoundaryInputGenerator.Generate(
             member, declaration, model, guards, _context.Options.UseMoq, varyCollections: true, out var failedParameter,
             construct: _context.Constructor.CreateDependency, instance: _context.Instance);
